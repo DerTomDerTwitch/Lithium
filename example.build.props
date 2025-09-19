@@ -1,0 +1,34 @@
+<!-- This file should be placed inside your local directory in order to build. -->
+<!-- Name the file `local.build.props`. -->
+<!-- Adjust the properties below to fit your local configuration. -->
+
+<Project>
+    <PropertyGroup>
+<!-- General Configuration -->
+        <!-- Whether or not you want the build steps to copy over the newly built versions. -->
+        <AutomateLocalDeployment>true</AutomateLocalDeployment>
+
+        <!-- Used only when building against Mono. Typically located at `steamapps/Schedule I` -->
+        <MonoGamePath>C:\Program Files (x86)\Steam\steamapps\common\Schedule I</MonoGamePath>
+
+        <!-- Used only when building against Il2Cpp. Typically located at `steamapps/Schedule I` -->
+        <Il2CppGamePath>C:\Program Files (x86)\Steam\steamapps\common\Schedule I</Il2CppGamePath>
+
+        <!-- Used when building both Il2Cpp and Mono. Typically located at `steamapps/Schedule I/MelonLoader/net6` -->
+        <MelonLoaderAssembliesPath>$(Il2CppGamePath)\MelonLoader\net6</MelonLoaderAssembliesPath>
+
+<!-- Mono Configuration -->
+        <!-- Used only when building against Mono. Typically located at `steamapps/Schedule I` -->
+        <LocalMonoDeploymentPath>$(MonoGamePath)</LocalMonoDeploymentPath>
+
+        <!-- Used only when building against Mono. Typically located at `steamapps/Schedule I/Schedule I_Data/Managed` -->
+        <MonoAssembliesPath>$(MonoGamePath)\Schedule I_Data\Managed</MonoAssembliesPath>
+
+<!-- Il2Cpp Configuration -->
+        <!-- Used only when building against Il2Cpp. Typically located at `steamapps/Schedule I` -->
+        <LocalIl2CppDeploymentPath>$(Il2CppGamePath)</LocalIl2CppDeploymentPath>
+
+        <!-- Used only when building against Melon Il2Cpp. Typically located at `steamapps/Schedule I/MelonLoader/Il2CppAssemblies` -->
+        <Il2CppAssembliesPath>$(Il2CppGamePath)\Melonloader\Il2CppAssemblies</Il2CppAssembliesPath>
+    </PropertyGroup>
+</Project>
