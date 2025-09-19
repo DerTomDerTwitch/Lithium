@@ -1,10 +1,15 @@
 ﻿using HarmonyLib;
+using Il2CppScheduleOne.Dialogue;
 using Il2CppScheduleOne.Economy;
+using Il2CppScheduleOne.Money;
 using Il2CppScheduleOne.NPCs.CharacterClasses;
 using Il2CppScheduleOne.PlayerScripts;
 using Il2CppScheduleOne.UI.Phone;
 using Il2CppScheduleOne.UI.Shop;
+using Il2CppTMPro;
 using Lithium.Helper;
+using MelonLoader;
+using UnityEngine;
 
 namespace Lithium.Modules.Shops.Patches
 {
@@ -15,13 +20,60 @@ namespace Lithium.Modules.Shops.Patches
         public static void PatchPrices()
         {
             ModShopsConfiguration configuration = Core.Get<ModShops>().Configuration;
-            if(!configuration.Enabled)
+            if (!configuration.Enabled)
                 return;
 
             ApplyShopOverrides();
             //ApplySupplierOverrides();
+            ApplySkateboardOverrides();
             configuration.SaveConfiguration();
         }
+
+        private static void ApplySkateboardOverrides()
+        {
+            ModShopsConfiguration configuration = Core.Get<ModShops>().Configuration;
+
+            DialogueController_SkateboardSeller[] dialogueControllers = UnityEngine.Object.FindObjectsOfType<DialogueController_SkateboardSeller>();
+            foreach (DialogueController_SkateboardSeller shop in dialogueControllers)
+            {
+
+                if (!configuration.SkateboardShops.TryGetValue(shop.gameObject.transform.parent?.name, out SkateboardShopSettings settings))
+                {
+                    MelonLogger.Warning($"Skate store, {shop.gameObject.transform.parent?.name}, not found in configuration");
+                    continue;
+                }
+
+                foreach (DialogueController_SkateboardSeller.Option listing in shop.Options)
+                {
+                    if (!settings.SkateboardOverrides.TryGetValue(listing.Item.ID, out SkateboardListingOverride overrideBoard))
+                    {
+                        MelonLogger.Warning($"Skateboard, {listing.Item.ID}, not found in configuration");
+                        continue;
+                    }
+
+                    listing.Price = overrideBoard.Price;
+                    listing.IsAvailable = overrideBoard.IsAvailable;
+                    UIUpdates(listing.Name, settings, overrideBoard);
+                }
+            }
+
+            static void UIUpdates(String name, SkateboardShopSettings shop, SkateboardListingOverride skateboard)
+            {
+                GameObject sign = UnityEngine.GameObject.Find($"{shop.UIContainer}/{skateboard.UIPath}");
+                if (sign == null)
+                {
+                    MelonLogger.Warning($"Unable to find skateboard sign path: {shop.UIContainer}/{skateboard.UIPath}");
+                    return;
+                }
+                if (!sign.TryGetComponent<TextMeshPro>(out TextMeshPro priceText))
+                {
+                    MelonLogger.Warning($"Unable to find text component for: {shop.UIContainer}/{skateboard.UIPath}");
+                    return;
+                }
+                priceText.SetText($"{name}\n{MoneyManager.FormatAmount(skateboard.Price)}");
+            }
+        }
+
 
         private static void ApplySupplierOverrides()
         {

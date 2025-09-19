@@ -16,6 +16,19 @@ namespace Lithium.Modules.Shops
         public Dictionary<string, float> PriceOverrides { get; set; } = [];
     }
 
+    public class SkateboardShopSettings
+    {
+        public string UIContainer;
+        public Dictionary<string, SkateboardListingOverride> SkateboardOverrides = [];
+    }
+
+    public class SkateboardListingOverride
+    {
+        public string UIPath;
+        public float Price;
+        public bool IsAvailable { get; set; } = true;
+    }
+
     public class ItemListingOverride
     {
         public float Price { get; set; }
@@ -34,7 +47,7 @@ namespace Lithium.Modules.Shops
         [JsonConverter(typeof(StringEnumConverter))]
         [JsonProperty(Order = 3)]
         public ShopInterface.EPaymentType PaymentType { get; set; }
-        
+
         [JsonProperty(Order = 6)]
         public Dictionary<string, ItemListingOverride> ItemOverrides = [];
     }
@@ -43,7 +56,7 @@ namespace Lithium.Modules.Shops
 
     public class DeliverySettings
     {
-        [JsonConverter(typeof(StringEnumConverter))] 
+        [JsonConverter(typeof(StringEnumConverter))]
         public DeliveryAvailabilitySettings Availability { get; set; } = DeliveryAvailabilitySettings.Unchanged;
         public float DeliveryFee { get; set; } = 200;
         public int XPRequirement { get; set; } = 0;
@@ -69,6 +82,8 @@ namespace Lithium.Modules.Shops
         public SupplierListingOverride Salvador;
 
         public Dictionary<string, DeliverySettings> Deliveries { get; set; }
+
+        public Dictionary<string, SkateboardShopSettings> SkateboardShops { get; set; }
     }
 
     public class ModShops : ModuleBase<ModShopsConfiguration>
@@ -77,6 +92,6 @@ namespace Lithium.Modules.Shops
         {
         }
 
-        
+
     }
 }

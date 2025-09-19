@@ -14,6 +14,7 @@ using Lithium.Modules.Shops;
 using Lithium.Modules.StackSizes;
 using Lithium.Modules.Storyline;
 using Lithium.Modules.TrashGrabber;
+using Lithium.Modules.VehiclePrices;
 using Lithium.Modules.WateringCans;
 using MelonLoader;
 using UnityEngine;
@@ -26,7 +27,7 @@ namespace Lithium
 {
     public class Core : MelonMod
     {
-        public static readonly List<ModuleBase> Modules = 
+        public static readonly List<ModuleBase> Modules =
         [
             new ModPropertyPrices(),
             new ModPlants(),
@@ -41,7 +42,8 @@ namespace Lithium
             new ModEmployees(),
             new ModChemistryStation(),
             new ModWateringCan(),
-            new ModEffectCombos()
+            new ModEffectCombos(),
+            new ModVehiclePrices()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();

@@ -540,6 +540,8 @@
 		<Compile Include="Modules\StackSizes\Patches\RegistryStartPatch.cs" />
 		<Compile Include="Modules\TrashGrabber\ModTrashGrabber.cs" />
 		<Compile Include="Modules\TrashGrabber\Patches\EquippableTrashGrabberGetCapacityPatch.cs" />
+		<Compile Include="Modules\VehiclePrices\ModVehiclePrices.cs" />
+		<Compile Include="Modules\VehiclePrices\Patches\ForceVehiclePrices.cs" />
 		<Compile Include="Util\SuccessChanceCalculator.cs" />
 		<Compile Include="Util\WeightedNormalizer.cs" />
 		<Compile Include="Util\WeightedPicker.cs" />
@@ -549,6 +551,6 @@
 	</ItemGroup>
 	
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">
-		<Exec Command="COPY &quot;$(TargetPath)&quot; &quot;$(ScheduleGamePath)\Mods&quot;" />
+		<Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ScheduleGamePath)\Mods" Retries="60" />
 	</Target>
 </Project>
