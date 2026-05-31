@@ -1,24 +1,24 @@
 ﻿using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.Product;
-using Il2CppScheduleOne.Properties;
+using Il2CppScheduleOne.Property;
 
 namespace Lithium.Helper
 {
     public static class ProductHelper
     {
-        public static bool PlayerHasSuitableProduct(this Customer customer)
-        {
-            List<Property> desires = customer.CustomerData.PreferredProperties.ToList();
+        //public static bool PlayerHasSuitableProduct(this Customer customer)
+        //{
+        //    List<Property> desires = customer.CustomerData.PreferredProperties.ToList();
 
-            if (desires.Count == 0)
-                return true;
+        //    if (desires.Count == 0)
+        //        return true;
 
-            int suitableProducts = ProductManager.DiscoveredProducts.ToList()
-                .Count(pd => GetMatchCount(pd, desires.Select(p => p.Name).ToList()) > 0);
+        //    int suitableProducts = ProductManager.DiscoveredProducts.ToList()
+        //        .Count(pd => GetMatchCount(pd, desires.Select(p => p.Name).ToList()) > 0);
             
-            return suitableProducts > 0 || desires.Count <= 0;
-        }
+        //    return suitableProducts > 0 || desires.Count <= 0;
+        //}
 
         public static bool DealerHasSuitableProduct(this Customer customer, out List<ItemInstance> dealerItems)
         {
@@ -49,6 +49,6 @@ namespace Lithium.Helper
                 .Count(p => p.Properties.ToList().Select(p => p.Name).Intersect(desires).Any());
         }
 
-        public static float GetMatchCount(List<Property> source, List<string> desires) => source.Count(p => desires.Contains(p.Name));
+        //public static float GetMatchCount(List<Property> source, List<string> desires) => source.Count(p => desires.Contains(p.Name));
     }
 }

@@ -1,27 +1,33 @@
-﻿using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.NPCs.Behaviour;
+using Il2CppFishNet;
 using HarmonyLib;
 
 namespace Lithium.Modules.PlantGrowth.Patches
 {
-    [HarmonyPatch(typeof(PotActionBehaviour), nameof(PotActionBehaviour.CompleteAction))]
-    public class PotActionBehaviorPatch
+    // The botanist harvest flow was reworked: the old PotActionBehaviour.CompleteAction (with an
+    // EActionType.Harvest check) is gone, replaced by HarvestPotBehaviour. GetQuantityToHarvest()
+    // returns how many product items the botanist pulls from a pot, so we scale it by the per-bud
+    // yield multiplier here. (Private method, patched by name.)
+    [HarmonyPatch(typeof(HarvestPotBehaviour), "GetQuantityToHarvest")]
+    public class HarvestPotBehaviourYieldPatch
     {
-        public static void Postfix(PotActionBehaviour __instance)
+        [HarmonyPostfix]
+        public static void Postfix(ref int __result)
         {
             ModPlantsConfiguration configuration = Core.Get<ModPlants>().Configuration;
             if (!configuration.Enabled)
                 return;
 
-            if (__instance.CurrentActionType != PotActionBehaviour.EActionType.Harvest) 
-                return;
-            if (__instance.botanist == null || __instance.botanist.Inventory == null) 
+            // Multiplayer: botanists are server-controlled NPCs and the yield roll uses random, so only
+            // let the server apply the multiplier. Clients calling this for prediction keep vanilla's
+            // value; the authoritative result is networked from the server.
+            if (!InstanceFinder.IsServer)
                 return;
 
-            ItemInstance item = __instance.botanist.MoveItemBehaviour.itemToRetrieveTemplate;
-            if (item == null)
+            if (__result <= 0)
                 return;
-            item.Quantity = (int)Math.Min(item.Quantity * configuration.RandomYieldPerBudPicker.Pick(), item.StackLimit);
+
+            __result = Math.Max(1, (int)(__result * configuration.RandomYieldPerBudPicker.Pick()));
         }
     }
 }

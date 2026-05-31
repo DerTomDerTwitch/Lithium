@@ -19,18 +19,27 @@ namespace Lithium.Modules.Customers.Patches
 
             ModShopsConfiguration config = Core.Get<ModShops>().Configuration;
 
-            if (config.Deliveries == null)
+            config.Deliveries ??= new Dictionary<string, DeliverySettings>();
+
+            // Add an entry for every delivery shop we don't already track. Fills the default (empty)
+            // config and picks up shops added by later game patches, without clobbering user edits.
+            bool added = false;
+            foreach (DeliveryShop d in DeliveryApp.Instance.deliveryShops.ToList())
             {
-                config.Deliveries = DeliveryApp.Instance.deliveryShops.ToList()
-                    .ToDictionary(d => d.MatchingShop.ShopName,
-                        d => new DeliverySettings
-                        {
-                            Availability = DeliveryAvailabilitySettings.Unchanged,
-                            DeliveryFee = d.DeliveryFee,
-                            XPRequirement = 0
-                        });
-                config.SaveConfiguration();
+                if (d?.MatchingShop == null || config.Deliveries.ContainsKey(d.MatchingShop.ShopName))
+                    continue;
+
+                config.Deliveries[d.MatchingShop.ShopName] = new DeliverySettings
+                {
+                    Availability = DeliveryAvailabilitySettings.Unchanged,
+                    DeliveryFee = d.GetDeliveryFee(),
+                    XPRequirement = 0
+                };
+                added = true;
             }
+
+            if (added)
+                config.SaveConfiguration();
 
             DeliveryUtils.ApplyDeliveryOverrides();
         }

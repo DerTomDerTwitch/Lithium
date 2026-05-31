@@ -5,7 +5,7 @@ using Il2CppScheduleOne.ObjectScripts;
 
 namespace Lithium.Modules.DryingRacks.Patches
 {
-    [HarmonyPatch(typeof(DryingRack), nameof(DryingRack.MinPass))]
+    [HarmonyPatch(typeof(DryingRack), nameof(DryingRack.OnMinPass))]
     public class DryingRackPatch
     {
         [HarmonyPrefix]

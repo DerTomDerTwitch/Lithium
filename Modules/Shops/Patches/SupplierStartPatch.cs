@@ -19,7 +19,7 @@ namespace Lithium.Modules.Shops.Patches
                 return;
 
             ApplyShopOverrides();
-            //ApplySupplierOverrides();
+            ApplySupplierOverrides();
             configuration.SaveConfiguration();
         }
 
@@ -27,16 +27,24 @@ namespace Lithium.Modules.Shops.Patches
         {
             void AssertSupplierConfigEntryExists(ref SupplierListingOverride configuration, Supplier supplier)
             {
-                configuration ??= new()
+                configuration ??= new SupplierListingOverride();
+                if (supplier == null)
+                    return;
+
+                // Add a price override for every online item we don't already track, filling the
+                // default (empty) config and any items added by later game patches.
+                foreach (PhoneShopInterface.Listing listing in supplier.OnlineShopItems)
                 {
-                    PriceOverrides = supplier.OnlineShopItems.ToDictionary(
-                        listing => listing.Item.ID,
-                        listing => listing.Price)
-                };
+                    if (!configuration.PriceOverrides.ContainsKey(listing.Item.ID))
+                        configuration.PriceOverrides[listing.Item.ID] = listing.Price;
+                }
             }
 
             void ApplySupplierConfigValues(SupplierListingOverride configuration, Supplier supplier)
             {
+                if (supplier == null)
+                    return;
+
                 foreach (PhoneShopInterface.Listing listing in supplier.OnlineShopItems)
                 {
                     if (configuration.PriceOverrides.TryGetValue(listing.Item.ID, out float @override))
@@ -58,6 +66,10 @@ namespace Lithium.Modules.Shops.Patches
             Salvador salvador = UnityEngine.Object.FindObjectOfType<Salvador>();
             AssertSupplierConfigEntryExists(ref configuration.Salvador, salvador);
             ApplySupplierConfigValues(configuration.Salvador, salvador);
+
+            Phil phil = UnityEngine.Object.FindObjectOfType<Phil>();
+            AssertSupplierConfigEntryExists(ref configuration.Phil, phil);
+            ApplySupplierConfigValues(configuration.Phil, phil);
         }
 
         private static void ApplyShopOverrides()
@@ -92,6 +104,11 @@ namespace Lithium.Modules.Shops.Patches
                         AssertConfigurationEntries(ref configuration.WeedSupplier, shopInterface, listings);
                         if (configuration.Enabled)
                             ApplyShopSettings(listings, shopInterface, configuration.WeedSupplier);
+                        break;
+                    case "shrooms_shop":
+                        AssertConfigurationEntries(ref configuration.ShroomSupplier, shopInterface, listings);
+                        if (configuration.Enabled)
+                            ApplyShopSettings(listings, shopInterface, configuration.ShroomSupplier);
                         break;
                     case "boutique":
                         AssertConfigurationEntries(ref configuration.Boutique, shopInterface, listings);
@@ -130,20 +147,28 @@ namespace Lithium.Modules.Shops.Patches
         private static void AssertConfigurationEntries(ref ShopListingSettings configSetting,
             ShopInterface shopInterface, List<ShopListing> listings)
         {
-            configSetting ??= new()
+            configSetting ??= new ShopListingSettings();
+
+            // A freshly-created entry has no item overrides yet, so adopt the shop's real payment type.
+            if (configSetting.ItemOverrides.Count == 0)
+                configSetting.PaymentType = shopInterface.PaymentType;
+
+            // Add an override for every listing we don't already track. This populates the default
+            // (empty) config the first time a save is loaded and picks up items added by later game
+            // patches, while leaving any existing user-edited overrides untouched.
+            foreach (ShopListing listing in listings)
             {
-                Override = false,
-                DefaultStock = -1,
-                PaymentType = shopInterface.PaymentType,
-                ItemOverrides = listings.ToDictionary(
-                    listing => listing.Item.ID,
-                    listing => new ItemListingOverride
-                    {
-                        Price = listing.Price,
-                        Stock = listing.LimitedStock ? listing.DefaultStock : -1,
-                        RestockRate = listing.RestockRate,
-                    }),
-            };
+                if (configSetting.ItemOverrides.ContainsKey(listing.Item.ID))
+                    continue;
+
+                configSetting.ItemOverrides[listing.Item.ID] = new ItemListingOverride
+                {
+                    Price = listing.Price,
+                    Stock = listing.LimitedStock ? listing.DefaultStock : -1,
+                    RestockRate = listing.RestockRate,
+                };
+            }
+
             shopInterface.RefreshShownItems();
             shopInterface.RefreshUnlockStatus();
         }

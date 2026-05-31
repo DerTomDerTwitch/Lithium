@@ -15,7 +15,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 	</ItemGroup>
 
 	<PropertyGroup>
@@ -28,6 +28,9 @@
 		</Reference>
 		<Reference Include="Assembly-CSharp">
 			<HintPath>$(ScheduleGamePath)\MelonLoader\Il2CppAssemblies\Assembly-CSharp.dll</HintPath>
+		</Reference>
+		<Reference Include="Il2CppScheduleOne.Core">
+			<HintPath>$(ScheduleGamePath)\MelonLoader\Il2CppAssemblies\Il2CppScheduleOne.Core.dll</HintPath>
 		</Reference>
 		<Reference Include="Il2CppAeLa.EasyFeedback">
 			<HintPath>$(ScheduleGamePath)\MelonLoader\Il2CppAssemblies\Il2CppAeLa.EasyFeedback.dll</HintPath>
@@ -487,11 +490,10 @@
 		<Compile Include="Helper\ProductHelper.cs" />
 		<Compile Include="Helper\StringExtensions.cs" />
 		<Compile Include="Modules\ChemistryStation\ModChemistryStation.cs" />
-		<Compile Include="Modules\ChemistryStation\Patches\ChemistryCookOperationGetCookDurationPatch.cs" />
+		<Compile Include="Modules\ChemistryStation\Patches\ChemistryCookOperationProgressPatch.cs" />
 		<Compile Include="Modules\Customers\Architecture\BonusPaymentHandler.cs" />
 		<Compile Include="Modules\Customers\Behaviours\CustomerNotificationState.cs" />
 		<Compile Include="Modules\Customers\BonusPayments\EffectCoverageBonus.cs" />
-		<Compile Include="Modules\Customers\BonusPayments\QualityBonus.cs" />
 		<Compile Include="Modules\Customers\ModCustomers.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerContractGenerationPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerProcessHandoverPatch.cs" />
@@ -501,10 +503,13 @@
 		<Compile Include="Modules\EffectCombos\ModEffectCombos.cs" />
 		<Compile Include="Modules\Employees\ModEmployees.cs" />
 		<Compile Include="Modules\Employees\Patches\CleanerPatch.cs" />
+		<Compile Include="Modules\Employees\Patches\StorageMenuRowPatch.cs" />
+		<Compile Include="Modules\Employees\Patches\NPCInventoryAwakePatch.cs" />
 		<Compile Include="Modules\Employees\Patches\PackagerPatch.cs" />
 		<Compile Include="Modules\Employees\Patches\ChemistPatch.cs" />
 		<Compile Include="Modules\Employees\Patches\BotanistPatch.cs" />
 		<Compile Include="Modules\PropertyPrices\Patches\ForcePropertyPrices.cs" />
+		<Compile Include="Modules\Vehicles\ModVehicles.cs" />
 		<Compile Include="Modules\WateringCans\ModWateringCan.cs" />
 		<Compile Include="Modules\WateringCans\Patches\FunctionalWateringCanPourAmountPatch.cs" />
 		<Compile Include="Util\DeliveryUtils.cs" />
@@ -514,6 +519,7 @@
 		<Compile Include="Modules\LabOven\ModLabOven.cs" />
 		<Compile Include="Modules\LabOven\Patches\OvenCookOperationIsReadyPatch.cs" />
 		<Compile Include="Modules\LabOven\Patches\OvenCookOperationGetCookDurationPatch.cs" />
+		<Compile Include="Modules\Shops\Patches\DeliveryShopFeePatch.cs" />
 		<Compile Include="Modules\Shops\Patches\ForceUpdateShopPrices.cs" />
 		<Compile Include="Modules\Shops\Patches\SupplierStartPatch.cs" />
 		<Compile Include="Modules\Storyline\ModStoryline.cs" />
@@ -525,6 +531,7 @@
 		<Compile Include="Modules\PlantGrowth\Patches\BotanistPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\PlantGrowthDonePatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\PlantHarvestablePatch.cs" />
+		<Compile Include="Modules\PlantGrowth\Patches\PlantGetHarvestedProductPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Behaviours\PlantModified.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\PotPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Behaviours\PotBaseValues.cs" />
@@ -533,9 +540,9 @@
 		<Compile Include="Modules\ModuleConfiguration.cs" />
 		<Compile Include="Modules\Shops\ModShops.cs" />
 		<Compile Include="Modules\StackSizes\ModStackSizes.cs" />
-		<Compile Include="Modules\StackSizes\Patches\CashDragPatch.cs" />
 		<Compile Include="Modules\DryingRacks\Patches\DryingRackCapacityPatch.cs" />
 		<Compile Include="Modules\StackSizes\ItemRegistry.cs" />
+		<Compile Include="Modules\StackSizes\Patches\ExperimentalCashStackingPatch.cs" />
 		<Compile Include="Modules\StackSizes\Patches\RegistryAddToRegistryPatch.cs" />
 		<Compile Include="Modules\StackSizes\Patches\RegistryStartPatch.cs" />
 		<Compile Include="Modules\TrashGrabber\ModTrashGrabber.cs" />

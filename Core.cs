@@ -1,4 +1,6 @@
 ﻿using Il2CppScheduleOne.Economy;
+using Il2CppScheduleOne.ItemFramework;
+using Il2CppScheduleOne.Vehicles;
 using Lithium.Helper;
 using Lithium.Modules;
 using Lithium.Modules.ChemistryStation;
@@ -14,11 +16,12 @@ using Lithium.Modules.Shops;
 using Lithium.Modules.StackSizes;
 using Lithium.Modules.Storyline;
 using Lithium.Modules.TrashGrabber;
+using Lithium.Modules.Vehicles;
 using Lithium.Modules.WateringCans;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Lithium.Core), "Lithium", "1.0.0", "DerTomDer & YukiSora", null)]
+[assembly: MelonInfo(typeof(Lithium.Core), "Lithium", "1.0.7", "DerTomDer & YukiSora", null)]
 [assembly: MelonGame("TVGS", "Schedule I")]
 [assembly: MelonPlatformDomain(MelonPlatformDomainAttribute.CompatibleDomains.IL2CPP)]
                                                                               
@@ -41,7 +44,8 @@ namespace Lithium
             new ModEmployees(),
             new ModChemistryStation(),
             new ModWateringCan(),
-            new ModEffectCombos()
+            new ModEffectCombos(),
+            new ModVehicles()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
@@ -88,7 +92,18 @@ namespace Lithium
             base.OnUpdate();
             if (Input.GetKeyDown(KeyCode.F5))
             {
-                Customer c = Customer.UnlockedCustomers.ToList()[0];
+                LandVehicle[] array2 = VehicleManager.Instance.AllVehicles.ToArray()
+                    .Where(v => v.IsPlayerOwned)
+                    .Where(v => v.VehicleCode == "veeper")
+                    .ToArray();
+                foreach (LandVehicle vehicle in array2)
+                {
+                    vehicle.Storage.SlotCount = 20;
+                    for (int i = vehicle.Storage.ItemSlots.Count; i <= vehicle.Storage.SlotCount; i++)
+                    {
+                        vehicle.Storage.ItemSlots.Add(new());                        
+                    }
+                }
                 // Singleton<DealCompletionPopup>.Instance.PlayPopup(c, 1, 0);
             }
         }

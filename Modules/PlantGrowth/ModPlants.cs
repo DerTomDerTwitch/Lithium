@@ -25,13 +25,48 @@ namespace Lithium.Modules.PlantGrowth
         public float GrowthModifier = 1f;
         public float WaterDrainModifier = 1f;
 
-        public static readonly List<WeightedFloat> RandomYieldsPerBudModifierDefaults = [ new(7.0f, 1.0f), new(2.0f, 2.0f), new(1.0f, 3.0f) ];
-        public static readonly List<WeightedFloat> RandomYieldModifiersDefaults = [ new(7.5f, 1), new(1.0f, 0.25f), new(1.0f, 1.5f), new(0.5f, 3.0f)];
-        public static readonly List<WeightedFloat> RandomQualityModifiersDefaults = [new(0, -0.5f), new(0.5f, 0), new(0.75f, 0), new(0.2f, 0.4f), new(0.01f, 0.5f)];
+        // Defaults are produced by factory methods (not shared static lists) so that clearing the
+        // instance list in OnBeforeConfigurationLoaded can never corrupt the defaults themselves.
 
-        public List<WeightedFloat> RandomYieldsPerBudModifier = RandomYieldsPerBudModifierDefaults;
-        public List<WeightedFloat> RandomYieldModifiers = RandomYieldModifiersDefaults;
-        public List<WeightedFloat> RandomQualityModifiers = RandomQualityModifiersDefaults;
+        // How many product items a single bud yields. Discrete weighted pick (WeightedPicker):
+        // weight is the relative chance, value is the count. Most buds give 1, sometimes 2, rarely 3.
+        public static List<WeightedFloat> DefaultResultsPerBud() =>
+        [
+            new(80f, 1f),
+            new(17f, 2f),
+            new(3f,  3f),
+        ];
+
+        // Overall plant yield multiplier, rolled once when the plant finishes growing. Interpolated
+        // distribution (WeightedNormalizer): values must be ascending, the doubled 1.0 entry is the
+        // wide "default amount" plateau, the ends are the rare big swings. ~50% stays 1.0, sometimes a
+        // bit less/more (0.75 / 1.25), rarely a lot less/more (0.5 / 2.0).
+        public static List<WeightedFloat> DefaultYieldModifiers() =>
+        [
+            new(2f,  0.5f),
+            new(10f, 0.75f),
+            new(13f, 1.0f),
+            new(50f, 1.0f),
+            new(15f, 1.25f),
+            new(8f,  2.0f),
+        ];
+
+        // Quality offset added to the plant's quality level (0..1, ~0.2 per tier: Trash→Heavenly).
+        // Interpolated like the yield modifier: ~50% same quality, sometimes ±one tier (±0.2),
+        // rarely ±two tiers (±0.4).
+        public static List<WeightedFloat> DefaultQualityModifiers() =>
+        [
+            new(2f,  -0.4f),
+            new(10f, -0.2f),
+            new(13f,  0.0f),
+            new(50f,  0.0f),
+            new(13f,  0.2f),
+            new(10f,  0.4f),
+        ];
+
+        public List<WeightedFloat> RandomYieldsPerBudModifier = DefaultResultsPerBud();
+        public List<WeightedFloat> RandomYieldModifiers = DefaultYieldModifiers();
+        public List<WeightedFloat> RandomQualityModifiers = DefaultQualityModifiers();
 
         [JsonIgnore] public WeightedPicker<float> RandomYieldPerBudPicker;
         [JsonIgnore] public WeightedNormalizer RandomYieldModifierPicker;
@@ -58,39 +93,45 @@ namespace Lithium.Modules.PlantGrowth
         public override void Load()
         {
             base.Load();
+
+            // Backfill any list the user emptied / that wasn't present in the JSON, then persist so the
+            // written config always shows the working defaults.
+            bool changed = false;
+            if (IsInvalid(Configuration.RandomYieldsPerBudModifier))
+            {
+                Configuration.RandomYieldsPerBudModifier = ModPlantsConfiguration.DefaultResultsPerBud();
+                changed = true;
+            }
+            if (IsInvalid(Configuration.RandomYieldModifiers))
+            {
+                Configuration.RandomYieldModifiers = ModPlantsConfiguration.DefaultYieldModifiers();
+                changed = true;
+            }
+            if (IsInvalid(Configuration.RandomQualityModifiers))
+            {
+                Configuration.RandomQualityModifiers = ModPlantsConfiguration.DefaultQualityModifiers();
+                changed = true;
+            }
+            if (changed)
+                Configuration.SaveConfiguration();
+
+            // Per-bud count: discrete weighted pick (value = count, weight = chance).
             Configuration.RandomYieldPerBudPicker = new();
+            Configuration.RandomYieldPerBudPicker.AddRange(
+                Configuration.RandomYieldsPerBudModifier.Select(p => new KeyValuePair<float, float>(p.Value, p.Weight)));
 
-            Configuration.RandomYieldPerBudPicker.AddRange(Configuration.RandomYieldPerBudPicker.Count == 0 
-                ? ModPlantsConfiguration.RandomYieldsPerBudModifierDefaults.Select(p => new KeyValuePair<float, float>(p.Value, p.Weight))
-                : Configuration.RandomYieldsPerBudModifier.Select(p => new KeyValuePair<float, float>(p.Value, p.Weight)));
-
-
+            // Yield and quality: interpolated weighted normalizers (Add(weight, value)).
             Configuration.RandomYieldModifierPicker = new();
             foreach (WeightedFloat entry in Configuration.RandomYieldModifiers)
-            {
                 Configuration.RandomYieldModifierPicker.Add(entry.Weight, entry.Value);
-            }
-            if (Configuration.RandomYieldModifiers.Count == 0 || Configuration.RandomYieldModifiers.Sum(e => e.Weight) <= 0f)
-            {
-                foreach (WeightedFloat value in ModPlantsConfiguration.RandomYieldModifiersDefaults)
-                {
-                    Configuration.RandomYieldModifiers.Add(value);
-                }
-            }
 
             Configuration.RandomYieldQualityPicker = new();
             foreach (WeightedFloat entry in Configuration.RandomQualityModifiers)
-            {
                 Configuration.RandomYieldQualityPicker.Add(entry.Weight, entry.Value);
-            }
-            if (Configuration.RandomQualityModifiers.Count == 0 || Configuration.RandomQualityModifiers.Sum(e => e.Weight) <= 0f)
-            {
-                foreach (WeightedFloat value in ModPlantsConfiguration.RandomQualityModifiersDefaults)
-                {
-                    Configuration.RandomYieldQualityPicker.Add(value.Weight, value.Value);
-                }
-            }
         }
+
+        private static bool IsInvalid(List<WeightedFloat> list) =>
+            list == null || list.Count == 0 || list.Sum(e => e.Weight) <= 0f;
 
         public override void Apply()
         {

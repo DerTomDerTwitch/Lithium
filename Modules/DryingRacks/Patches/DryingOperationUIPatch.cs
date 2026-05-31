@@ -21,7 +21,7 @@ namespace Lithium.Modules.DryingRacks.Patches
             DryingOperation op = __instance.AssignedOperation;
 
             float tNorm = Mathf.Clamp01((float)op.Time / configValue);
-            int timeLeft = Mathf.Clamp(configValue - op.Time, 0, configValue);
+            int timeLeft = (int)Mathf.Clamp(configValue - op.Time, 0, configValue);
             int hours = timeLeft / 60;
             int minutes = timeLeft % 60;
 

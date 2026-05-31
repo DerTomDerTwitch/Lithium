@@ -3,7 +3,7 @@ using Il2CppScheduleOne.Quests;
 
 namespace Lithium.Modules.Storyline.Patches
 {
-    [HarmonyPatch(typeof(Quest_WelcomeToHylandPoint), nameof(Quest_WelcomeToHylandPoint.Explode))]
+    [HarmonyPatch(typeof(Quest_WelcomeToHylandPoint), nameof(Quest_WelcomeToHylandPoint.BlowupRV))]
     public class QuestWelcomeToHylandPointPatch
     {
         [HarmonyPrefix]

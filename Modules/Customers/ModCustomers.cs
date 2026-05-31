@@ -17,16 +17,16 @@ namespace Lithium.Modules.Customers
     {
         public bool Enabled { get; set; }
         public bool AffectsDealers { get; set; } = true;
-        public EffectMatchBonus OneCoveredEffect { get; set; } = new();
-        public EffectMatchBonus TwoCoveredEffects { get; set; } = new();
-        public EffectMatchBonus ThreeCoveredEffects { get; set; } = new();
-    }
 
-    public class QualityBonus
-    {
-        public bool Enabled { get; set; }
-        public bool AffectsDealers { get; set; } = true;
-        public float BonusPercentage { get; set; }
+        // Bonus scales with how many of the customer's desired effects the product covers: a small
+        // tip for one match, a solid bonus for two, a big payout for three+. Fixed is per unit,
+        // percentage is a share of the contract payment.
+        public EffectMatchBonus OneCoveredEffect { get; set; } =
+            new() { FixedBonusMin = 2, FixedBonusMax = 5, PercentageBonusMin = 1f, PercentageBonusMax = 3f };
+        public EffectMatchBonus TwoCoveredEffects { get; set; } =
+            new() { FixedBonusMin = 5, FixedBonusMax = 10, PercentageBonusMin = 3f, PercentageBonusMax = 7f };
+        public EffectMatchBonus ThreeCoveredEffects { get; set; } =
+            new() { FixedBonusMin = 10, FixedBonusMax = 20, PercentageBonusMin = 7f, PercentageBonusMax = 15f };
     }
 
     public class SampleOffering
@@ -65,7 +65,6 @@ namespace Lithium.Modules.Customers
         public override string Name => "Customers";
         public SampleOffering SampleOffering { get; set; } = new SampleOffering();
         public Contracts Contracts { get; set; } = new Contracts();
-        public QualityBonus QualityBonus { get; set; } = new QualityBonus();
         public EffectBonus EffectBonus { get; set; } = new EffectBonus();
     }
 
@@ -77,7 +76,6 @@ namespace Lithium.Modules.Customers
         {
             ClassInjector.RegisterTypeInIl2Cpp<CustomerNotificationState>();
             RegisterBonusPaymentHandler(new EffectCoverageBonus());
-            RegisterBonusPaymentHandler(new BonusPayments.QualityBonus());
         }
 
         public override void Apply()

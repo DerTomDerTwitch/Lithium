@@ -15,12 +15,18 @@ namespace Lithium.Modules.PlantGrowth.Patches
         private static readonly Dictionary<object, bool> SkipFlags = [];
         private static readonly Dictionary<object, bool> GenerateFlags = [];
 
+        // Set while a player hand-harvest is running so the botanist-side Plant.GetHarvestedProduct
+        // patch knows not to also roll a quality bonus (the player path already does its own here).
+        internal static bool PlayerHarvestInProgress;
+
         [HarmonyPrefix]
         public static bool Prefix(PlantHarvestable __instance)
         {
             ModPlantsConfiguration configuration = Core.Get<ModPlants>().Configuration;
             if (!configuration.Enabled)
                 return true;
+
+            PlayerHarvestInProgress = true;
 
             Plant componentInParent = __instance.GetComponentInParent<Plant>();
             if (!componentInParent.TryGetComponent(out PlantBaseQuality comp))
@@ -54,6 +60,8 @@ namespace Lithium.Modules.PlantGrowth.Patches
         [HarmonyPostfix]
         public static void Postfix(PlantHarvestable __instance)
         {
+            PlayerHarvestInProgress = false;
+
             ModPlantsConfiguration configuration = Core.Get<ModPlants>().Configuration;
             if (!configuration.Enabled)
                 return;

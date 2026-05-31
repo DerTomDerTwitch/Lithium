@@ -1,69 +1,27 @@
-﻿using HarmonyLib;
-using Il2CppFishNet;
-using Il2CppScheduleOne.DevUtilities;
-using Il2CppScheduleOne.GameTime;
+using HarmonyLib;
 using Il2CppScheduleOne.ObjectScripts;
-using Il2CppScheduleOne.Variables;
-using Unity.Jobs.LowLevel.Unsafe;
 using UnityEngine;
 
 namespace Lithium.Modules.MixingStations.Patches
 {
-    [HarmonyPatch(typeof(MixingStation), nameof(MixingStation.MinPass))]
+    // Previously this reimplemented the whole MixingStation.OnMinPass (advancing CurrentMixTime by
+    // MixStepsPerSecond and duplicating the completion/clock/light logic) which is fragile across
+    // updates. Vanilla advances CurrentMixTime by 1 per game-minute and completes once it reaches
+    // GetMixTimeForCurrentOperation(), so simply shrinking that target by the configured speed makes
+    // the operation finish proportionally faster while leaving all vanilla logic intact. Mirrors the
+    // LabOven cook-duration patch.
+    [HarmonyPatch(typeof(MixingStation), nameof(MixingStation.GetMixTimeForCurrentOperation))]
     internal class MixingStationSpeedPatch
     {
-        [HarmonyPrefix]
-        public static bool MixingStationSpeed(MixingStation __instance)
+        [HarmonyPostfix]
+        public static void Postfix(ref int __result)
         {
             ModMixingStationsConfiguration config = Core.Get<ModMixingStations>().Configuration;
-            if(!config.Enabled)
-                return true;
+            if (!config.Enabled)
+                return;
 
-            if (__instance.CurrentMixOperation != null || __instance.OutputSlot.Quantity > 0)
-            {
-                int num = 0;
-                if (__instance.CurrentMixOperation != null)
-                {
-                    int currentMixTime = __instance.CurrentMixTime;
-                    int currentMixTime2 = __instance.CurrentMixTime;
-                    __instance.CurrentMixTime = currentMixTime2 + config.MixStepsPerSecond;
-                    num = __instance.GetMixTimeForCurrentOperation();
-                    if (__instance.CurrentMixTime >= num && currentMixTime < num && InstanceFinder.IsServer)
-                    {
-                        NetworkSingleton<VariableDatabase>.Instance.SetVariableValue("Mixing_Operations_Completed", (NetworkSingleton<VariableDatabase>.Instance.GetValue<float>("Mixing_Operations_Completed") + 1f).ToString(), true);
-                        __instance.MixingDone_Networked();
-                    }
-                }
-                if (__instance.Clock != null)
-                {
-                    __instance.Clock.SetScreenLit(true);
-                    __instance.Clock.DisplayMinutes(Mathf.Max(num - __instance.CurrentMixTime, 0));
-                }
-                if (__instance.Light != null)
-                {
-                    if (__instance.IsMixingDone)
-                    {
-                        __instance.Light.isOn = NetworkSingleton<TimeManager>.Instance.DailyMinTotal % 2 == 0;
-                        return false;
-                    }
-                    __instance.Light.isOn = true;
-                    return false;
-                }
-            }
-            else
-            {
-                if (__instance.Clock != null)
-                {
-                    __instance.Clock.SetScreenLit(false);
-                    __instance.Clock.DisplayText(string.Empty);
-                }
-                if (__instance.Light != null && __instance.IsMixingDone)
-                {
-                    __instance.Light.isOn = false;
-                }
-            }
-
-            return false;
+            int speed = Mathf.Max(1, config.MixStepsPerSecond);
+            __result = Mathf.Max(1, Mathf.CeilToInt(__result / (float)speed));
         }
     }
 }

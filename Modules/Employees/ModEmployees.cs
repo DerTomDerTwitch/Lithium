@@ -1,11 +1,4 @@
-﻿using Il2CppInterop.Runtime.Injection;
-using Lithium.Modules.Employees.Patches;
-using Lithium.Modules.PlantGrowth.Behaviours;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿//using Lithium.Modules.Employees.Patches;
 using Il2CppScheduleOne.Employees;
 
 namespace Lithium.Modules.Employees
@@ -20,6 +13,8 @@ namespace Lithium.Modules.Employees
         public float AdditivePourTime = 10f;
         public float SeedSowTime = 15f;
         public float HarvestTime = 15f;
+        public int InventorySlotCount = 5;
+        public int InventoryRowCount = 1;
     }
 
     public class ChemistConfiguration
@@ -27,6 +22,8 @@ namespace Lithium.Modules.Employees
         public int MaxStations = 6;
         public int DailyWage = 300;
         public float WalkSpeed = 1.2f;
+        public int InventorySlotCount = 5;
+        public int InventoryRowCount = 1;
     }
 
     public class PackagerConfiguration
@@ -36,6 +33,8 @@ namespace Lithium.Modules.Employees
         public float PackagingSpeedMultiplier = 2f;
         public int DailyWage = 200;
         public float WalkSpeed = 1.2f;
+        public int InventorySlotCount = 5;
+        public int InventoryRowCount = 1;
     }
 
     public class CleanerConfiguration
@@ -43,6 +42,14 @@ namespace Lithium.Modules.Employees
         public int MaxBins = 3;
         public int DailyWage = 100;
         public float WalkSpeed = 1.2f;
+        public int InventorySlotCount = 5;
+        public int InventoryRowCount = 1;
+    }
+
+    public class DealerConfiguration
+    {
+        public int InventorySlotCount = 5;
+        public int InventoryRowCount = 1;
     }
 
     public class ModEmployeesConfiguration : ModuleConfiguration
@@ -52,8 +59,9 @@ namespace Lithium.Modules.Employees
         public ChemistConfiguration Chemists = new ChemistConfiguration();
         public PackagerConfiguration Packagers = new PackagerConfiguration();
         public CleanerConfiguration Cleaners = new CleanerConfiguration();
+        public DealerConfiguration Dealers = new DealerConfiguration();
     }
-    
+
     public class ModEmployees : ModuleBase<ModEmployeesConfiguration>
     {
         public static readonly HashSet<Employee> ConfiguredEmployees = [];

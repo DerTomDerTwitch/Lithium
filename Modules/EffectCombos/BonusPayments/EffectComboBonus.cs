@@ -31,20 +31,32 @@ namespace Lithium.Modules.EffectCombos.BonusPayments
                     continue;
 
                 string[] effects = pd.Properties.ToList().Select(p => p.Name.ToLowerInvariant()).ToArray();
+                float deliveryShare = totalUnits > 0 ? item.Quantity / (float)totalUnits : 0f; // in [0,1]
 
+                // Only the single best-paying combo this item qualifies for is awarded, rather than
+                // stacking every matching combo.
+                EffectCombo bestCombo = null;
+                float bestBonus = 0f;
                 foreach (EffectCombo combo in configuration.Combos)
                 {
-                    if(combo.Effects.Select(s => s.ToLowerInvariant()).Intersect(effects).Count() != combo.Effects.Length)
+                    if (combo.Effects == null || combo.Effects.Length == 0)
+                        continue;
+                    if (combo.Effects.Select(s => s.ToLowerInvariant()).Intersect(effects).Count() != combo.Effects.Length)
                         continue;
 
                     float fixedPart = combo.FixedBonus * item.Quantity;
-                    float deliveryShare = item.Quantity / (float)totalUnits; // in [0,1]
                     float percentPart = contract.Payment * (combo.PercentageBonus / 100f) * deliveryShare;
-
                     float itemBonus = fixedPart + percentPart;
 
-                    boni.Add(new($"\"{combo.Name}\" Combo Bonus", itemBonus));
+                    if (bestCombo == null || itemBonus > bestBonus)
+                    {
+                        bestCombo = combo;
+                        bestBonus = itemBonus;
+                    }
                 }
+
+                if (bestCombo != null && bestBonus > 0f)
+                    boni.Add(new($"\"{bestCombo.Name}\" Combo Bonus", bestBonus));
             }
 
             return boni.Any();

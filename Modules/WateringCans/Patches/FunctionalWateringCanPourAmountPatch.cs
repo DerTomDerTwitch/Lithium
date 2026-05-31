@@ -1,9 +1,9 @@
 ﻿using HarmonyLib;
-using Il2CppScheduleOne.ObjectScripts;
+using Il2CppScheduleOne.PlayerScripts;
 
 namespace Lithium.Modules.WateringCans.Patches
 {
-    [HarmonyPatch(typeof(FunctionalWateringCan), nameof(FunctionalWateringCan.PourAmount))]
+    [HarmonyPatch(typeof(WaterContainerPourable), nameof(WaterContainerPourable.PourAmount))]
     public static class FunctionalWateringCanPourAmountPatch
     {
         [HarmonyPrefix]

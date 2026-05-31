@@ -2,7 +2,7 @@
 using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.Product;
-using Il2CppScheduleOne.Properties;
+using Lithium.Helper;
 using Lithium.Util;
 using MelonLoader;
 using UnityEngine;
@@ -25,25 +25,12 @@ namespace Lithium.Modules.Customers.Patches
             
             foreach (ItemInstance item in items)
             {
-                ProductDefinition productDefinition = item.definition.TryCast<ProductDefinition>();
+                ProductDefinition productDefinition = item.Definition.TryCast<ProductDefinition>();
                 ProductItemInstance productItemInstance = item.TryCast<ProductItemInstance>();
 
 
-                string[] desires = new string[__instance.CustomerData.PreferredProperties.Count];
-                int c = 0;
-                foreach (Property property in __instance.CustomerData.PreferredProperties)
-                {
-                    desires[0] = property.Name;
-                    c++;
-                }
-
-                string[] productEffects = new string[productDefinition.Properties.Count];
-                c = 0;
-                foreach (Property property in productDefinition.Properties)
-                {
-                    productEffects[0] = property.Name;
-                    c++;
-                }
+                string[] desires = __instance.CustomerData.PreferredProperties.ToList().Select(p => p.Name).ToArray();
+                string[] productEffects = productDefinition.Properties.ToList().Select(p => p.Name).ToArray();
 
                 sum += SuccessChanceCalculator.CalculateSuccess(
                     productDefinition.DrugType,  

@@ -73,7 +73,7 @@ namespace Lithium.Modules.Customers.Patches
                     foreach (KeyValuePair<string, int> entry in productMaxQuantity)
                     {
                         // TODO: Add special patterns here, once this module gets implemented
-                        pickableItems.Add(entry.Key, ProductHelper.GetMatchCount(products.First(p => p.ID.Equals(entry.Key)).Properties.ToList(), desires));
+                        //pickableItems.Add(entry.Key, ProductHelper.GetMatchCount(products.First(p => p.ID.Equals(entry.Key)).Properties.ToList(), desires));
                     }
 
                     string id = pickableItems.Pick();

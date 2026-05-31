@@ -1,4 +1,4 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using Il2CppScheduleOne.Employees;
 
 namespace Lithium.Modules.Employees.Patches
@@ -9,13 +9,14 @@ namespace Lithium.Modules.Employees.Patches
         [HarmonyPostfix]
         static void Postfix(Packager __instance)
         {
+            ModEmployees mod = Core.Get<ModEmployees>();
+            if (mod == null || !mod.Configuration.Enabled)
+                return;
+
             if (!ModEmployees.ConfiguredEmployees.Add(__instance))
                 return;
 
-            ModEmployeesConfiguration config = Core.Get<ModEmployees>().Configuration;
-            if (!config.Enabled)
-                return;
-
+            ModEmployeesConfiguration config = mod.Configuration;
             __instance.configuration.Stations.MaxItems = config.Packagers.MaxStations;
             __instance.configuration.Routes.MaxRoutes = config.Packagers.MaxRoutes;
             __instance.Movement.WalkSpeed = config.Packagers.WalkSpeed;

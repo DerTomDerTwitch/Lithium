@@ -53,22 +53,24 @@ namespace Lithium.Modules.Shops
     {
         public override string Name => "Shops";
 
-        public ShopListingSettings ThriftyThreads;
-        public ShopListingSettings CokeSupplier;
-        public ShopListingSettings MethSupplier;
-        public ShopListingSettings WeedSupplier;
-        public ShopListingSettings Boutique;
-        public ShopListingSettings DarkMarket;
-        public ShopListingSettings GasStation;
-        public ShopListingSettings CentralGasStation;
-        public ShopListingSettings DansHardware;
-        public ShopListingSettings HandyHanks;
+        public ShopListingSettings ThriftyThreads = new();
+        public ShopListingSettings CokeSupplier = new();
+        public ShopListingSettings MethSupplier = new();
+        public ShopListingSettings WeedSupplier = new();
+        public ShopListingSettings ShroomSupplier = new();
+        public ShopListingSettings Boutique = new();
+        public ShopListingSettings DarkMarket = new();
+        public ShopListingSettings GasStation = new();
+        public ShopListingSettings CentralGasStation = new();
+        public ShopListingSettings DansHardware = new();
+        public ShopListingSettings HandyHanks = new();
 
-        public SupplierListingOverride Albert;
-        public SupplierListingOverride Shirley;
-        public SupplierListingOverride Salvador;
+        public SupplierListingOverride Albert = new();
+        public SupplierListingOverride Shirley = new();
+        public SupplierListingOverride Salvador = new();
+        public SupplierListingOverride Phil = new();
 
-        public Dictionary<string, DeliverySettings> Deliveries { get; set; }
+        public Dictionary<string, DeliverySettings> Deliveries { get; set; } = new();
     }
 
     public class ModShops : ModuleBase<ModShopsConfiguration>

@@ -20,7 +20,12 @@ public static class DeliveryUtils
         foreach (KeyValuePair<string, DeliverySettings> entry in config.Deliveries)
         {
             if (ingameShops.TryGetValue(entry.Key, out DeliveryShop shop))
-            {                                                               
+            {
+                // The game replaced the runtime-settable DeliveryShop.IsAvailable with AvailableByDefault,
+                // and the delivery fee is now computed by GetDeliveryFee() (no setter). Availability is
+                // driven here via AvailableByDefault + GameObject.SetActive; the fee override is applied
+                // through DeliveryShopFeePatch on GetDeliveryFee().
+                bool available;
                 switch (entry.Value.Availability)
                 {
                     case DeliveryAvailabilitySettings.Unchanged:
@@ -28,37 +33,35 @@ public static class DeliveryUtils
                         {
                             case "Albert Hoover":
                                 Albert albert = UnityEngine.Object.FindObjectOfType<Albert>();
-                                shop.IsAvailable = albert.RelationData.RelationDelta > Supplier.DELIVERY_RELATIONSHIP_REQUIREMENT;
+                                shop.AvailableByDefault = albert.RelationData.RelationDelta > Supplier.DELIVERY_RELATIONSHIP_REQUIREMENT;
                                 break;
                             case "Shirley Watts":
                                 Shirley shirley = UnityEngine.Object.FindObjectOfType<Shirley>();
-                                shop.IsAvailable = shirley.RelationData.RelationDelta > Supplier.DELIVERY_RELATIONSHIP_REQUIREMENT;
+                                shop.AvailableByDefault = shirley.RelationData.RelationDelta > Supplier.DELIVERY_RELATIONSHIP_REQUIREMENT;
                                 break;
                             case "Salvador Moreno":
                                 Salvador salvador = UnityEngine.Object.FindObjectOfType<Salvador>();
-                                shop.IsAvailable = salvador.RelationData.RelationDelta > Supplier.DELIVERY_RELATIONSHIP_REQUIREMENT;
-                                break;
-                            default:
-                                shop.IsAvailable = shop.IsAvailable;
+                                shop.AvailableByDefault = salvador.RelationData.RelationDelta > Supplier.DELIVERY_RELATIONSHIP_REQUIREMENT;
                                 break;
                         }
 
                         continue;
                     case DeliveryAvailabilitySettings.Never:
-                        shop.IsAvailable = false;
+                        available = false;
                         break;
                     case DeliveryAvailabilitySettings.Always:
-                        shop.IsAvailable = true;
+                        available = true;
                         break;
                     case DeliveryAvailabilitySettings.AfterReachingXP:
-                        shop.IsAvailable = LevelManager.Instance.TotalXP >= entry.Value.XPRequirement;
+                        available = LevelManager.Instance.TotalXP >= entry.Value.XPRequirement;
                         break;
                     default:
                         throw new ArgumentOutOfRangeException();
                 }
-                shop.DeliveryFee = entry.Value.DeliveryFee;
-                shop.DeliveryFeeLabel.text = $"${shop.DeliveryFee}";
-                shop.gameObject.SetActive(shop.IsAvailable);
+                shop.AvailableByDefault = available;
+                if (shop.DeliveryFeeLabel != null)
+                    shop.DeliveryFeeLabel.text = $"${entry.Value.DeliveryFee}";
+                shop.gameObject.SetActive(available);
             }
         }
     }
