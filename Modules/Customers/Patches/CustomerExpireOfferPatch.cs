@@ -13,6 +13,11 @@ namespace Lithium.Modules.Customers.Patches
         [HarmonyPostfix]
         public static void Postfix(Customer __instance)
         {
+            // The guard suppressed this expiry (the acceptance window hasn't elapsed) — the offer is still
+            // live, so it must not be treated as a refusal/retry.
+            if (CustomerExpireOfferGuardPatch.LastCallBlocked)
+                return;
+
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
             if (!config.Enabled || !config.Contracts.Enabled || !config.Contracts.RetryNextDayOnRefusal)
                 return;

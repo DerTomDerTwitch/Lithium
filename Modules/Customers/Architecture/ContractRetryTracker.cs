@@ -1,5 +1,4 @@
 using Il2CppScheduleOne.GameTime;
-using Il2CppScheduleOne.Persistence;
 using MelonLoader;
 using MelonLoader.Utils;
 using Newtonsoft.Json;
@@ -79,7 +78,7 @@ namespace Lithium.Modules.Customers.Architecture
             if (Loaded)
                 return;
 
-            string key = ResolveSaveKey();
+            string key = SaveSlotKey.Resolve();
             if (key == null)
                 return; // save folder not known yet — try again on the next access.
 
@@ -91,7 +90,7 @@ namespace Lithium.Modules.Customers.Architecture
         private static void Persist()
         {
             if (CurrentSaveKey == null)
-                CurrentSaveKey = ResolveSaveKey();
+                CurrentSaveKey = SaveSlotKey.Resolve();
             if (CurrentSaveKey == null)
                 return;
 
@@ -124,44 +123,5 @@ namespace Lithium.Modules.Customers.Architecture
         }
 
         private static string FilePath(string key) => Path.Combine(StorageFolder, $"{key}.json");
-
-        // A filename-safe, human-readable id for the loaded save slot: the slot folder name (e.g.
-        // "SaveGame_1") plus the organisation name (e.g. "SaveGame_1 - Greenacre"). The folder name alone
-        // already uniquely identifies the slot; the organisation name is appended only for readability.
-        // Returns null until both are available, so the key never changes mid-session (the existing lazy
-        // callers simply retry on the next access — both are populated by contract-generation time).
-        private static string ResolveSaveKey()
-        {
-            try
-            {
-                LoadManager loadManager = LoadManager.Instance;
-                string path = loadManager?.LoadedGameFolderPath;
-                if (string.IsNullOrEmpty(path))
-                    return null; // save folder not known yet — try again on the next access.
-
-                string slot = new DirectoryInfo(path).Name; // unique per slot, e.g. "SaveGame_1"
-                if (string.IsNullOrEmpty(slot))
-                    return null;
-
-                string organisation = loadManager.ActiveSaveInfo?.OrganisationName;
-                if (string.IsNullOrWhiteSpace(organisation))
-                    return null; // save info not populated yet — retry so the key stays stable.
-
-                return Sanitize($"{slot} - {organisation}");
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        // Replaces characters that are illegal in file names so the readable key is safe to use as a
-        // filename (organisation names are player-entered and may contain e.g. ':' or '/').
-        private static string Sanitize(string raw)
-        {
-            foreach (char invalid in Path.GetInvalidFileNameChars())
-                raw = raw.Replace(invalid, '_');
-            return raw;
-        }
     }
 }

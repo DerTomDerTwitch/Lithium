@@ -14,13 +14,16 @@ namespace Lithium.Modules.MixingStations.Patches
     internal class MixingStationSpeedPatch
     {
         [HarmonyPostfix]
-        public static void Postfix(ref int __result)
+        public static void Postfix(MixingStation __instance, ref int __result)
         {
             ModMixingStationsConfiguration config = Core.Get<ModMixingStations>().Configuration;
             if (!config.Enabled)
                 return;
 
-            int speed = Mathf.Max(1, config.MixStepsPerSecond);
+            // Mk2 inherits this method from MixingStation, so the postfix fires for both tiers;
+            // pick the speed factor matching the instance's actual type.
+            bool isMk2 = __instance.TryCast<MixingStationMk2>() != null;
+            int speed = Mathf.Max(1, isMk2 ? config.Mk2MixStepsPerSecond : config.MixStepsPerSecond);
             __result = Mathf.Max(1, Mathf.CeilToInt(__result / (float)speed));
         }
     }

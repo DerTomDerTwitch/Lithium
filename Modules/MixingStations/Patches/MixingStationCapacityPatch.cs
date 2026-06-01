@@ -13,7 +13,10 @@ namespace Lithium.Modules.MixingStations.Patches
             if (!config.Enabled)
                 return;
 
-            __instance.MaxMixQuantity = config.InputCapacity;
+            // MixingStationMk2 derives from MixingStation and inherits Start, so this postfix fires for
+            // both tiers; TryCast returns non-null only for the MK II so we can apply its own capacity.
+            bool isMk2 = __instance.TryCast<MixingStationMk2>() != null;
+            __instance.MaxMixQuantity = isMk2 ? config.Mk2InputCapacity : config.InputCapacity;
         }
     }
 }

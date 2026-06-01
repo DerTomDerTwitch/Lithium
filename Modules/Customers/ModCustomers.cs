@@ -89,6 +89,11 @@ namespace Lithium.Modules.Customers
         // (ProductManager listed price) rather than the product's standard market value.
         public bool DealerSellAtListedPrice { get; set; } = true;
 
+        // When the player fills a (matching) direct order themselves (no assigned dealer), the customer
+        // pays the player's set listed price (ProductManager listed price) rather than the game's standard
+        // per-unit market roll. Off restores vanilla pricing for direct sales.
+        public bool SellAtListedPrice { get; set; } = true;
+
         // When the player refuses a contract offer, or it expires unanswered, the customer re-attempts
         // an order the next day instead of waiting for their next scheduled order day.
         public bool RetryNextDayOnRefusal { get; set; } = true;
@@ -252,6 +257,9 @@ namespace Lithium.Modules.Customers
             DealerCoverageNotifier.ResetNoDealer();
             // Drop the previous save's in-memory retries; the new save's file is reloaded lazily on access.
             ContractRetryTracker.Unload();
+            // Same for offer deadlines: the new save's persisted deadlines are reloaded lazily, so an offer
+            // still pending across a save/reload keeps the extended acceptance window it was promised.
+            OfferDeadlineTracker.Unload();
 
             if (!Configuration.Enabled)
                 return;

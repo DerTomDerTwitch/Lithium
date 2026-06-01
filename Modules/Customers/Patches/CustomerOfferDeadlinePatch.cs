@@ -5,6 +5,7 @@ using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.Quests;
 using Lithium.Helper;
 using Lithium.Modules.Customers.Architecture;
+using UnityEngine;
 
 namespace Lithium.Modules.Customers.Patches
 {
@@ -22,7 +23,7 @@ namespace Lithium.Modules.Customers.Patches
                 return;
 
             AcceptanceWindow window = config.Contracts.AcceptanceWindow;
-            if (window == null || !window.Enabled)
+            if (window == null)
                 return;
 
             // Offer/expiry state is server-authoritative (clients receive it via RPC).
@@ -43,7 +44,20 @@ namespace Lithium.Modules.Customers.Patches
             if (quantity <= 0)
                 return;
 
-            contract.ExpiresAfter = OfferAcceptanceWindow.Extend(contract.ExpiresAfter, quantity, window);
+            // Window the player is actually granted, computed exactly like the customer's deadline text
+            // (CustomerOfferDeadlineMessagePatch) so the enforced expiry matches the promise.
+            int baseWindow = Customer.OFFER_EXPIRY_TIME_MINS;
+            int windowMins = window.Enabled
+                ? OfferAcceptanceWindow.Extend(baseWindow, quantity, window)
+                : baseWindow;
+
+            // Authoritative enforcement: the ExpireOffer guard keeps the deal alive until this absolute
+            // deadline, regardless of which field the native expiry check actually consults.
+            OfferDeadlineTracker.Set(__instance.CustomerData.name, offeredAt.GetMinSum() + windowMins);
+
+            // Belt-and-suspenders: also widen the per-contract window the native check may count against
+            // (never shrinking whatever the game already set).
+            contract.ExpiresAfter = Mathf.Max(contract.ExpiresAfter, windowMins);
         }
     }
 }

@@ -57,16 +57,18 @@ namespace Lithium
         public override void OnInitializeMelon()
         {
             Logger = LoggerInstance;
+            LithiumConfig.Load();
+
             foreach (ModuleBase module in Modules)
             {
-                LoggerInstance.Msg($"Loading {module.GetType().Name}");
+                Log.Info($"Loading {module.GetType().Name}");
                 module.Load();
             }
 
             HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("com.lithium");
             harmony.PatchAll();
 
-            LoggerInstance.Msg("Lithium initialized");
+            Log.Info("Lithium initialized");
         }
 
         private bool _isFirstStart = true;
@@ -77,7 +79,7 @@ namespace Lithium
             {
                 foreach (ModuleBase module in Modules)
                 {
-                    LoggerInstance.Msg($"Loading {module.GetType().Name}");
+                    Log.Info($"Loading {module.GetType().Name}");
                     module.Apply();
                 }
                 

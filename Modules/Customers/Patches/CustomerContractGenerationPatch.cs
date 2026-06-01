@@ -166,9 +166,10 @@ namespace Lithium.Modules.Customers.Patches
                 else
                 {
                     // Prefer higher-coverage products (and maybe add a second one). Direct sales have no
-                    // stock ceiling, so each product's available quantity is unbounded.
+                    // stock ceiling, so each product's available quantity is unbounded. Pays the player's
+                    // listed price when enabled (otherwise the game's standard per-unit roll).
                     ComposeMatchingOrder(__result, matching, desires, quality, qtyMultiplier,
-                        _ => int.MaxValue, useListedPrice: false);
+                        _ => int.MaxValue, config.Contracts.SellAtListedPrice);
                 }
             }
 

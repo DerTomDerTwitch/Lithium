@@ -24,6 +24,12 @@ namespace Lithium.Modules.Customers.Patches
         private static readonly string[] DayNames =
             { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
 
+        // CurrentContractEnded can fire more than once for a single completed contract (same multi-fire
+        // behaviour the game shows for NotifyPlayerOfContract), which sent the next-order text twice. Key
+        // the last announcement by customer + the in-game minute it completed: the duplicate callbacks
+        // share that minute, while two genuine completions for one customer in the same minute can't happen.
+        private static readonly Dictionary<string, int> _lastAnnouncedMinSum = new();
+
         [HarmonyPostfix]
         public static void Postfix(Customer __instance, EQuestState outcome)
         {
@@ -43,6 +49,12 @@ namespace Lithium.Modules.Customers.Patches
                 return;
 
             string customerName = __instance.CustomerData.name;
+
+            // Suppress the duplicate CurrentContractEnded callback for this same completion.
+            int nowMinSum = TimeManager.Instance.GetDateTime().GetMinSum();
+            if (_lastAnnouncedMinSum.TryGetValue(customerName, out int lastMinSum) && lastMinSum == nowMinSum)
+                return;
+            _lastAnnouncedMinSum[customerName] = nowMinSum;
 
             // The announced day comes from the order-pattern schedule, which is only the customer's real
             // schedule when order patterns are reshaping it (same condition as CustomerGetOrderDaysPatch),
