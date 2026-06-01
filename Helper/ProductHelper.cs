@@ -28,6 +28,18 @@ namespace Lithium.Helper
             return desires.Intersect(dealerProducts.Distinct().ToList()).Any();
         }
 
+        // Distinct effect names across every product currently in the dealer's inventory. Mirrors the
+        // product->effect resolution in DealerHasSuitableProduct (FirstOrDefault tolerates undiscovered items).
+        public static List<string> GetDealerStockedEffects(this Dealer dealer)
+        {
+            List<ItemInstance> dealerItems = dealer.Inventory.ItemSlots.ToList()
+                .Where(i => i.ItemInstance != null).Select(i => i.ItemInstance).ToList();
+            List<ProductDefinition> products = dealerItems
+                .Select(d => ProductManager.DiscoveredProducts.ToList().FirstOrDefault(p => p.ID.Equals(d.ID)))
+                .Where(p => p != null).Distinct().ToList();
+            return products.SelectMany(p => p.Properties.ToList()).Select(p => p.Name).Distinct().ToList();
+        }
+
         public static bool ProductMatchesDesires(ProductDefinition pd, List<string> desires) => pd.Properties.ToList().Select(p => p.Name).Intersect(desires).Any();
 
         public static string FormatDesires(CustomerData customerData) => customerData.PreferredProperties.ToList().Select(p => p.Name).SmartJoin(", ", " or ");

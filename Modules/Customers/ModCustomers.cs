@@ -1,7 +1,10 @@
-﻿using Il2CppInterop.Runtime.Injection;
+﻿using System.Collections;
+using Il2CppInterop.Runtime.Injection;
 using Lithium.Modules.Customers.Architecture;
 using Lithium.Modules.Customers.Behaviours;
 using Lithium.Modules.Customers.BonusPayments;
+using MelonLoader;
+using UnityEngine;
 
 namespace Lithium.Modules.Customers
 {
@@ -82,6 +85,10 @@ namespace Lithium.Modules.Customers
         // DEFAULT market value (not the player's listed price). 0.75 = 25% below default value.
         public float ReducedDealPriceMultiplier { get; set; } = 0.75f;
 
+        // When the player refuses a contract offer, or it expires unanswered, the customer re-attempts
+        // an order the next day instead of waiting for their next scheduled order day.
+        public bool RetryNextDayOnRefusal { get; set; } = true;
+
         // Texts sent when the customer settles for a non-matching product at the reduced price.
         public string[] ReducedSaleTemplates { get; set; } =
         [
@@ -112,6 +119,14 @@ namespace Lithium.Modules.Customers
         public string ContactDisplayName { get; set; } = "Lithium";
         // When true, each coverage text also lists every customer that is still uncovered.
         public bool ListUncovered { get; set; }
+        // When true, closing a dealer's in-person inventory texts which of that dealer's assigned customers
+        // and desired effects their current inventory fails to cover.
+        public bool NotifyDealerInventoryOnClose { get; set; }
+        // When true, a single compact situation overview is texted shortly after each save loads.
+        public bool SendStartupOverview { get; set; } = true;
+        // When true, the coverage of customers with no assigned dealer (count, percentage and the uncovered
+        // names) is texted at startup and again whenever a product is listed/delisted.
+        public bool NotifyNoDealerCustomers { get; set; } = true;
     }
 
     public class ModCustomersConfiguration : ModuleConfiguration
@@ -137,11 +152,42 @@ namespace Lithium.Modules.Customers
 
         public override void Apply()
         {
-            // New save/scene: drop the cached coverage baseline so it re-snapshots fresh.
+            // New save/scene: drop the cached coverage baselines so they re-snapshot fresh.
             ProductCoverageNotifier.Reset();
+            DealerCoverageNotifier.ResetNoDealer();
+            // Drop the previous save's in-memory retries; the new save's file is reloaded lazily on access.
+            ContractRetryTracker.Unload();
 
             if (!Configuration.Enabled)
                 return;
+
+            if (Configuration.Coverage.Enabled &&
+                (Configuration.Coverage.SendStartupOverview || Configuration.Coverage.NotifyNoDealerCustomers))
+                MelonCoroutines.Start(StartupOverviewRoutine());
+        }
+
+        // Waits for the save to finish loading the world (messaging + customer roster) before texting the
+        // one-shot startup reports, capped so a save that never populates customers won't wait forever.
+        private static IEnumerator StartupOverviewRoutine()
+        {
+            float waited = 0f;
+            while (waited < 30f && !LithiumStartupReport.WorldReady())
+            {
+                yield return new WaitForSeconds(1f);
+                waited += 1f;
+            }
+
+            if (!LithiumStartupReport.WorldReady())
+                yield break;
+
+            // Small buffer so listed products / dealer inventories have settled before we snapshot.
+            yield return new WaitForSeconds(2f);
+
+            CoverageNotifications coverage = Core.Get<ModCustomers>().Configuration.Coverage;
+            if (coverage.SendStartupOverview)
+                LithiumStartupReport.Send();
+            if (coverage.NotifyNoDealerCustomers)
+                DealerCoverageNotifier.ReportNoDealerCustomers();
         }
 
         public void RegisterBonusPaymentHandler(IBonusPaymentHandler handler)

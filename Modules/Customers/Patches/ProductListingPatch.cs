@@ -26,6 +26,9 @@ namespace Lithium.Modules.Customers.Patches
                 return;
 
             ProductCoverageNotifier.ReportChange();
+
+            if (Core.Get<ModCustomers>().Configuration.Coverage.NotifyNoDealerCustomers)
+                DealerCoverageNotifier.ReportNoDealerChange();
         }
 
         private static bool ShouldRun()

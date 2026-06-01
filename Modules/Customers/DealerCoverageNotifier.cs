@@ -1,0 +1,132 @@
+using Il2CppScheduleOne.Economy;
+using Il2CppScheduleOne.Product;
+using Lithium.Helper;
+
+namespace Lithium.Modules.Customers
+{
+    /// <summary>
+    /// Texts (via the Lithium contact) coverage breakdowns for a dealer's assigned customers — and,
+    /// separately, for customers the player serves directly (no assigned dealer). A customer counts as
+    /// "covered" when at least one of their desired effects is in stock (dealer inventory for assigned
+    /// customers, the player's listed products for dealerless ones); customers with no desired effects
+    /// are always covered.
+    /// </summary>
+    public static class DealerCoverageNotifier
+    {
+        public static void ReportForDealer(Dealer dealer)
+        {
+            if (dealer == null)
+                return;
+
+            List<Customer> customers = dealer.AssignedCustomers.ToList()
+                .Where(c => c != null && c.CustomerData != null && c.NPC != null)
+                .ToList();
+            if (customers.Count == 0)
+                return;
+
+            // Effects the dealer's current stock can satisfy.
+            List<string> stocked = dealer.GetDealerStockedEffects();
+
+            int covered = 0;
+            List<string> uncoveredCustomers = [];
+            HashSet<string> uncoveredEffects = [];
+
+            foreach (Customer c in customers)
+            {
+                List<string> desires = c.CustomerData.PreferredProperties.ToList().Select(p => p.Name).ToList();
+                List<string> missing = desires.Except(stocked).ToList();
+
+                if (desires.Count == 0 || missing.Count < desires.Count)
+                    covered++;
+                else
+                    uncoveredCustomers.Add(c.NPC.fullName);   // not a single desired effect is stocked
+
+                foreach (string m in missing)
+                    uncoveredEffects.Add(m);
+            }
+
+            int total = customers.Count;
+            int pct = (int)Math.Round(covered * 100.0 / total);
+            string dealerName = string.IsNullOrEmpty(dealer.FirstName) ? dealer.fullName : dealer.FirstName;
+            string head = $"{dealerName} — {covered}/{total} customers covered ({pct}%).";
+
+            if (uncoveredCustomers.Count == 0)
+            {
+                LithiumContact.Send($"{head} Stock covers everyone — nice work.");
+                return;
+            }
+
+            LithiumContact.Send(
+                $"{head} Uncovered: {uncoveredCustomers.OrderBy(n => n).SmartJoin(", ", " and ")}. " +
+                $"Missing effects: {uncoveredEffects.OrderBy(e => e).SmartJoin(", ", " and ")}.");
+        }
+
+        // Covered-customer-id snapshot for the no-dealer group, so list/delist (which fires SetProductListed
+        // twice on the host) only texts once and only when coverage actually changed.
+        private static HashSet<string> _knownNoDealerCovered;
+
+        // Drop the cached snapshot on save/scene load so it re-baselines for the new game state.
+        public static void ResetNoDealer() => _knownNoDealerCovered = null;
+
+        // Startup: always send the full no-dealer picture and (re)baseline the snapshot.
+        public static void ReportNoDealerCustomers()
+        {
+            (HashSet<string> coveredIds, int total, List<string> uncovered) = ComputeNoDealer();
+            _knownNoDealerCovered = coveredIds;
+            SendNoDealer(coveredIds.Count, total, uncovered);
+        }
+
+        // Listing change: only text when the no-dealer covered set actually changed (also dedups the
+        // duplicate SetProductListed invocation on the host).
+        public static void ReportNoDealerChange()
+        {
+            (HashSet<string> coveredIds, int total, List<string> uncovered) = ComputeNoDealer();
+            if (_knownNoDealerCovered != null && _knownNoDealerCovered.SetEquals(coveredIds))
+                return;
+            _knownNoDealerCovered = coveredIds;
+            SendNoDealer(coveredIds.Count, total, uncovered);
+        }
+
+        // Customers with no assigned dealer are served by the player directly, so they are covered by the
+        // player's currently listed products rather than any dealer's stock.
+        private static (HashSet<string> coveredIds, int total, List<string> uncovered) ComputeNoDealer()
+        {
+            List<ProductDefinition> listed = ProductManager.ListedProducts.ToList();
+            List<Customer> customers = Customer.UnlockedCustomers.ToList()
+                .Where(c => c != null && c.CustomerData != null && c.NPC != null && c.AssignedDealer == null)
+                .ToList();
+
+            HashSet<string> coveredIds = [];
+            List<string> uncovered = [];
+
+            foreach (Customer c in customers)
+            {
+                List<string> desires = c.CustomerData.PreferredProperties.ToList().Select(p => p.Name).ToList();
+
+                if (desires.Count == 0 || listed.Any(p => ProductHelper.ProductMatchesDesires(p, desires)))
+                    coveredIds.Add(c.NPC.ID);
+                else
+                    uncovered.Add(c.NPC.fullName);
+            }
+
+            return (coveredIds, customers.Count, uncovered);
+        }
+
+        private static void SendNoDealer(int covered, int total, List<string> uncovered)
+        {
+            if (total == 0)
+                return;
+
+            int pct = (int)Math.Round(covered * 100.0 / total);
+            string head = $"No-dealer customers — {covered}/{total} covered ({pct}%).";
+
+            if (uncovered.Count == 0)
+            {
+                LithiumContact.Send($"{head} You've got them all.");
+                return;
+            }
+
+            LithiumContact.Send($"{head} Uncovered: {uncovered.OrderBy(n => n).SmartJoin(", ", " and ")}.");
+        }
+    }
+}

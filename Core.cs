@@ -8,6 +8,7 @@ using Lithium.Modules.Customers;
 using Lithium.Modules.DryingRacks;
 using Lithium.Modules.EffectCombos;
 using Lithium.Modules.Employees;
+using Lithium.Modules.EndOfDayFreeze;
 using Lithium.Modules.LabOven;
 using Lithium.Modules.MixingStations;
 using Lithium.Modules.PlantGrowth;
@@ -45,7 +46,8 @@ namespace Lithium
             new ModChemistryStation(),
             new ModWateringCan(),
             new ModEffectCombos(),
-            new ModVehicles()
+            new ModVehicles(),
+            new ModEndOfDayFreeze()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();

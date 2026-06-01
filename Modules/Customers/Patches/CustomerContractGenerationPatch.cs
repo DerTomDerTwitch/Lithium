@@ -32,6 +32,12 @@ namespace Lithium.Modules.Customers.Patches
                 return;
             }
 
+            // A customer whose offer was refused / expired re-attempts today, even if today isn't one
+            // of their normal (or pattern) order days. The flag is cleared once we hand them a fresh
+            // offer below; if generation fails they keep it and try again the next day.
+            bool isRetryDay = config.Contracts.RetryNextDayOnRefusal &&
+                              ContractRetryTracker.IsRetryDay(__instance.CustomerData.name);
+
             OrderPatternProfile pattern = null;
             if (config.OrderPatterns.Enabled)
             {
@@ -41,8 +47,8 @@ namespace Lithium.Modules.Customers.Patches
                     __instance.CustomerData.MaxOrdersPerWeek);
 
                 // Safety net in case the game caches the GetOrderDays schedule: suppress orders on
-                // days that aren't part of this customer's pattern.
-                if (!pattern.OrderDays.Contains(TimeManager.Instance.CurrentDay))
+                // days that aren't part of this customer's pattern (retry days excepted).
+                if (!isRetryDay && !pattern.OrderDays.Contains(TimeManager.Instance.CurrentDay))
                 {
                     __result = null;
                     return;
@@ -58,7 +64,11 @@ namespace Lithium.Modules.Customers.Patches
             EQuality quality = orderedProduct.Quality;
 
             if (desires.Count == 0)
+            {
+                // Game default order is fine — the customer got an offer, so any retry debt is settled.
+                ContractRetryTracker.Clear(__instance.CustomerData.name);
                 return;
+            }
 
             float qtyMultiplier = pattern?.QuantityMultiplier ?? 1f;
 
@@ -129,6 +139,10 @@ namespace Lithium.Modules.Customers.Patches
                     CustomerNotifier.NotifyPlayerReducedDeal(__instance);
                 }
             }
+
+            // A fresh offer reached the player — the retry obligation (if any) is fulfilled. A later
+            // refusal/expiry re-arms it for the following day.
+            ContractRetryTracker.Clear(__instance.CustomerData.name);
         }
 
         // Pays the customer below the product's DEFAULT market value (not the player's listed price)
@@ -145,12 +159,22 @@ namespace Lithium.Modules.Customers.Patches
         {
             int desiredQuantity = __result.Products.entries.ToList().Sum(e => e.Quantity);
             int scaledQuantity = Mathf.Max(1, Mathf.RoundToInt(desiredQuantity * quantityMultiplier));
+            int finalQuantity = Mathf.Min(maxAvailableQuantity, scaledQuantity);
+
+            // The game sized __result.Payment for the ORIGINAL order quantity. We're changing how many
+            // units the customer buys (bulk patterns scale up, dealer stock caps down), so the payment
+            // has to move with the quantity — otherwise a 54-unit bulk order still only pays for the
+            // handful the game first rolled. Scaling proportionally preserves the game's own per-unit
+            // price (quality, market value and customer markup are already baked into Payment).
+            if (desiredQuantity > 0 && finalQuantity != desiredQuantity)
+                __result.Payment = __result.Payment / desiredQuantity * finalQuantity;
+
             ProductList list = new();
             list.entries.Add(new()
             {
                 ProductID = id,
                 Quality = quality,
-                Quantity = Mathf.Min(maxAvailableQuantity, scaledQuantity)
+                Quantity = finalQuantity
             });
             __result.Products = list;
         }
