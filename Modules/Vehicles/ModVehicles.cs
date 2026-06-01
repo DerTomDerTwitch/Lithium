@@ -45,9 +45,6 @@ namespace Lithium.Modules.Vehicles
                 
                 if (pair.Value.OverrideSlotCount)
                     vehiclePrefab.Storage.SlotCount = pair.Value.SlotCount;
-                
-                //if (pair.Value.OverrideDefaultColor)
-                //    vehiclePrefab.DefaultColor = pair.Value.Color;
             }
         }
     }

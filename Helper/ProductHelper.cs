@@ -7,19 +7,6 @@ namespace Lithium.Helper
 {
     public static class ProductHelper
     {
-        //public static bool PlayerHasSuitableProduct(this Customer customer)
-        //{
-        //    List<Property> desires = customer.CustomerData.PreferredProperties.ToList();
-
-        //    if (desires.Count == 0)
-        //        return true;
-
-        //    int suitableProducts = ProductManager.DiscoveredProducts.ToList()
-        //        .Count(pd => GetMatchCount(pd, desires.Select(p => p.Name).ToList()) > 0);
-            
-        //    return suitableProducts > 0 || desires.Count <= 0;
-        //}
-
         public static bool DealerHasSuitableProduct(this Customer customer, out List<ItemInstance> dealerItems)
         {
             List<string> desires = customer.CustomerData.PreferredProperties
@@ -34,7 +21,9 @@ namespace Lithium.Helper
             }
 
             dealerItems = customer.AssignedDealer.Inventory.ItemSlots.ToList().Where(i => i.ItemInstance != null).Select(i => i.ItemInstance).ToList();
-            List<ProductDefinition> products = dealerItems.Select(d => ProductManager.DiscoveredProducts.ToList().Single(p => p.ID.Equals(d.ID))).Distinct().ToList();
+            // FirstOrDefault, not Single: a dealer can hold items whose product isn't in
+            // DiscoveredProducts (throws "Sequence contains no matching element"); nulls are filtered next.
+            List<ProductDefinition> products = dealerItems.Select(d => ProductManager.DiscoveredProducts.ToList().FirstOrDefault(p => p.ID.Equals(d.ID))).Distinct().ToList();
             List<string> dealerProducts = products.Where(p => p != null).SelectMany(p => p.Properties.ToList()).Select(p => p.Name).Distinct().ToList();
             return desires.Intersect(dealerProducts.Distinct().ToList()).Any();
         }
@@ -48,7 +37,5 @@ namespace Lithium.Helper
             return ProductManager.DiscoveredProducts.ToList()
                 .Count(p => p.Properties.ToList().Select(p => p.Name).Intersect(desires).Any());
         }
-
-        //public static float GetMatchCount(List<Property> source, List<string> desires) => source.Count(p => desires.Contains(p.Name));
     }
 }

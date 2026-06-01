@@ -104,30 +104,17 @@ namespace Lithium
                         vehicle.Storage.ItemSlots.Add(new());                        
                     }
                 }
-                // Singleton<DealCompletionPopup>.Instance.PlayPopup(c, 1, 0);
+            }
+
+            if (Input.GetKeyDown(KeyCode.F6))
+            {
+                OrderPatternDebug.Dump();
+            }
+
+            if (Input.GetKeyDown(KeyCode.F7))
+            {
+                NpcRosterDebug.Dump();
             }
         }
-
-        //public static Sprite FindSprite(string spriteName)
-        //{
-        //    try
-        //    {
-        //        foreach (Sprite sprite in Resources.FindObjectsOfTypeAll<Sprite>())
-        //        {
-        //            if (sprite.name == spriteName)
-        //            {
-        //                Logger.Debug($"Found sprite '{spriteName}' directly in loaded objects");
-        //                return sprite;
-        //            }
-        //        }
-
-        //        return null;
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        Logger.Error($"Error finding sprite '{spriteName}': {ex.Message}");
-        //        return null;
-        //    }
-        //}
     }
 }

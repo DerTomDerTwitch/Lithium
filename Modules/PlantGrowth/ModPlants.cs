@@ -51,17 +51,19 @@ namespace Lithium.Modules.PlantGrowth
             new(8f,  2.0f),
         ];
 
-        // Quality offset added to the plant's quality level (0..1, ~0.2 per tier: Trash→Heavenly).
-        // Interpolated like the yield modifier: ~50% same quality, sometimes ±one tier (±0.2),
-        // rarely ±two tiers (±0.4).
+        // Quality offset added to the plant's quality level. The game's quality bands are wide
+        // (Standard spans 0.40–0.75) so offsets stay modest; these were tightened so the spread isn't
+        // "all over the place". Interpolated like the yield modifier: most harvests land near the
+        // plant's own quality, sometimes a tier off (±0.15), rarely two (±0.3). Stacks on top of any
+        // fertilizer/PGF QualityChange already baked into the plant's quality level.
         public static List<WeightedFloat> DefaultQualityModifiers() =>
         [
-            new(2f,  -0.4f),
-            new(10f, -0.2f),
+            new(2f,  -0.3f),
+            new(10f, -0.15f),
             new(13f,  0.0f),
             new(50f,  0.0f),
-            new(13f,  0.2f),
-            new(10f,  0.4f),
+            new(13f,  0.15f),
+            new(10f,  0.3f),
         ];
 
         public List<WeightedFloat> RandomYieldsPerBudModifier = DefaultResultsPerBud();

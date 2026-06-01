@@ -7,6 +7,7 @@ using Il2CppScheduleOne.Messaging;
 using Il2CppScheduleOne.Product;
 using Il2CppScheduleOne.Quests;
 using Lithium.Helper;
+using Lithium.Modules.Customers.Architecture;
 using Lithium.Modules.Customers.Behaviours;
 using Lithium.Util;
 using UnityEngine;
@@ -30,7 +31,24 @@ namespace Lithium.Modules.Customers.Patches
             {
                 return;
             }
-            
+
+            OrderPatternProfile pattern = null;
+            if (config.OrderPatterns.Enabled)
+            {
+                pattern = OrderPatternProfile.Create(
+                    __instance.CustomerData.name,
+                    __instance.CustomerData.MinOrdersPerWeek,
+                    __instance.CustomerData.MaxOrdersPerWeek);
+
+                // Safety net in case the game caches the GetOrderDays schedule: suppress orders on
+                // days that aren't part of this customer's pattern.
+                if (!pattern.OrderDays.Contains(TimeManager.Instance.CurrentDay))
+                {
+                    __result = null;
+                    return;
+                }
+            }
+
             List<string> desires = __instance.CustomerData.PreferredProperties
                 .ToList()
                 .Select(p => p.Name)
@@ -38,141 +56,103 @@ namespace Lithium.Modules.Customers.Patches
 
             ProductList.Entry orderedProduct = __result.Products.entries.ToList()[0];
             EQuality quality = orderedProduct.Quality;
-            int quantity = orderedProduct.Quantity;
 
             if (desires.Count == 0)
                 return;
 
+            float qtyMultiplier = pattern?.QuantityMultiplier ?? 1f;
+
             if (__instance.AssignedDealer != null)
             {
-                if (__instance.DealerHasSuitableProduct(out List<ItemInstance> dealerItems))
+                // dealerItems = everything the dealer currently holds, regardless of effect match.
+                __instance.DealerHasSuitableProduct(out List<ItemInstance> dealerItems);
+                if (dealerItems.Count == 0)
                 {
-                    List<ProductDefinition> products = dealerItems.Select(d => ProductManager.DiscoveredProducts.ToList().Single(p => p.ID.Equals(d.ID))).Distinct().ToList();
-                    if(products.Count == 0)
-                    {
-                        NotifyDealerNotSuitable(__instance);
-                        __result = null;
-                        return;
-                    }
-
-                    Dictionary<string, int> productMaxQuantity = [];
-                    foreach (ProductDefinition product in products)
-                    {
-                        if (product == null)
-                            continue;
-                        int maxQuantity = dealerItems
-                            .Where(i => i.ID == product.ID)
-                            .Sum(i => i.Quantity);
-                        if (maxQuantity > 0)
-                        {
-                            productMaxQuantity[product.ID] = maxQuantity;
-                        }
-                    }
-
-                    WeightedPicker<string> pickableItems = new();
-                    foreach (KeyValuePair<string, int> entry in productMaxQuantity)
-                    {
-                        // TODO: Add special patterns here, once this module gets implemented
-                        //pickableItems.Add(entry.Key, ProductHelper.GetMatchCount(products.First(p => p.ID.Equals(entry.Key)).Properties.ToList(), desires));
-                    }
-
-                    string id = pickableItems.Pick();
-                    quantity = productMaxQuantity[id];
-
-                    RewireOrderedProduct(__result, id, quality, Mathf.Clamp(quantity, 1, quantity));
-                }
-                else
-                {
-                    NotifyDealerNotSuitable(__instance);
+                    // Dealer has nothing to sell at all — no order (daily nudge handled elsewhere).
                     __result = null;
+                    return;
+                }
+
+                List<ProductDefinition> dealerProducts = dealerItems
+                    .Select(i => ProductManager.DiscoveredProducts.ToList().FirstOrDefault(p => p.ID.Equals(i.ID)))
+                    .Where(p => p != null)
+                    .Distinct()
+                    .ToList();
+
+                List<ProductDefinition> matching = dealerProducts
+                    .Where(p => ProductHelper.ProductMatchesDesires(p, desires))
+                    .ToList();
+
+                bool reduced = matching.Count == 0;
+                ProductDefinition chosen = (reduced ? dealerProducts : matching)
+                    .OrderBy(x => UnityEngine.Random.value)
+                    .First();
+
+                int available = dealerItems.Where(i => i.ID == chosen.ID).Sum(i => i.Quantity);
+                RewireOrderedProduct(__result, chosen.ID, quality, Mathf.Max(1, available), qtyMultiplier);
+
+                if (reduced)
+                {
+                    // Nothing in the dealer's stock matches the wanted effects: still sell, but below
+                    // the product's default value, and tell the player it was a reduced substitute.
+                    ApplyReducedPayment(__result, chosen);
+                    CustomerNotifier.NotifyDealerReducedDeal(__instance);
                 }
             }
             else
             {
-                List<ProductDefinition> suitableProducts = ProductManager.ListedProducts
-                    .ToList()
+                List<ProductDefinition> listed = ProductManager.ListedProducts.ToList();
+                if (listed.Count == 0)
+                {
+                    // Nothing listed at all — no order (daily nudge handled elsewhere).
+                    __result = null;
+                    return;
+                }
+
+                List<ProductDefinition> matching = listed
                     .Where(p => ProductHelper.ProductMatchesDesires(p, desires))
-                    .OrderBy(x => UnityEngine.Random.value)
                     .ToList();
 
-                if (suitableProducts.Count == 0)
+                bool reduced = matching.Count == 0;
+                // Direct (non-dealer) sales have no stock ceiling, so RewireOrderedProduct uses
+                // int.MaxValue — bulk-pattern customers can order above the game's base quantity.
+                ProductDefinition chosen = (reduced ? listed : matching)
+                    .OrderBy(x => UnityEngine.Random.value)
+                    .First();
+
+                RewireOrderedProduct(__result, chosen.ID, quality, int.MaxValue, qtyMultiplier);
+
+                if (reduced)
                 {
-                    NotifyPlayerProductsNotSuitable(__instance);
-                    __result = null;
-                }
-                else
-                {
-                    RewireOrderedProduct(__result, suitableProducts[0].ID, quality, quantity);
+                    // No listed product matches the wanted effects: still sell at a reduced price.
+                    ApplyReducedPayment(__result, chosen);
+                    CustomerNotifier.NotifyPlayerReducedDeal(__instance);
                 }
             }
         }
 
-        private static void RewireOrderedProduct(ContractInfo __result, string id, EQuality quality, int maxAvailableQuantity)
+        // Pays the customer below the product's DEFAULT market value (not the player's listed price)
+        // for a substitute that doesn't cover their desired effects. Bonus handlers still run at
+        // handover, but the effect-coverage bonus is naturally zero here.
+        private static void ApplyReducedPayment(ContractInfo __result, ProductDefinition product)
+        {
+            ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
+            int qty = __result.Products.entries.ToList().Sum(e => e.Quantity);
+            __result.Payment = product.MarketValue * qty * config.Contracts.ReducedDealPriceMultiplier;
+        }
+
+        private static void RewireOrderedProduct(ContractInfo __result, string id, EQuality quality, int maxAvailableQuantity, float quantityMultiplier = 1f)
         {
             int desiredQuantity = __result.Products.entries.ToList().Sum(e => e.Quantity);
+            int scaledQuantity = Mathf.Max(1, Mathf.RoundToInt(desiredQuantity * quantityMultiplier));
             ProductList list = new();
             list.entries.Add(new()
             {
                 ProductID = id,
                 Quality = quality,
-                Quantity = Mathf.Min(maxAvailableQuantity, desiredQuantity)
+                Quantity = Mathf.Min(maxAvailableQuantity, scaledQuantity)
             });
             __result.Products = list;
-        }
-
-        private static void NotifyPlayerProductsNotSuitable(Customer __instance)
-        {
-            ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-
-            if(!config.Contracts.SendNotification)
-                return;
-
-            if (__instance.TryGetComponent(out CustomerNotificationState state))
-            {
-                if (TimeManager.Instance.Playtime - state.LastNotification < 60 * config.Contracts.NotificationCooldownInMinutes)
-                    return;
-            }
-            else
-            {
-                state = __instance.gameObject.AddComponent<CustomerNotificationState>();
-                state.LastNotification = TimeManager.Instance.Playtime;
-            }
-
-            string msg = config.Contracts.MessageTemplates
-                .OrderBy(x => UnityEngine.Random.value)
-                .FirstOrDefault()
-                .Replace("##DESIRES##", ProductHelper.FormatDesires(__instance.CustomerData));
-
-            MessagingManager.Instance.ReceiveMessage(new(msg, Message.ESenderType.Other), true, __instance.NPC.ID);
-            state.LastNotification = TimeManager.Instance.Playtime;
-        }
-
-        private static void NotifyDealerNotSuitable(Customer __instance)
-        {
-            ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-
-            if (!config.Contracts.SendNotificationForDealers)
-                return;
-
-            if (__instance.TryGetComponent(out CustomerNotificationState state))
-            {
-                if (TimeManager.Instance.Playtime - state.LastNotification < 60 * config.Contracts.NotificationCooldownInMinutes)
-                    return;
-            }
-            else
-            {
-                state = __instance.gameObject.AddComponent<CustomerNotificationState>();
-                state.LastNotification = TimeManager.Instance.Playtime;
-            }
-
-            string msg = config.Contracts.DealerTemplates
-                .OrderBy(x => UnityEngine.Random.value)
-                .FirstOrDefault()
-                .Replace("##DEALER##", __instance.AssignedDealer.FirstName)
-                .Replace("##DESIRES##", ProductHelper.FormatDesires(__instance.CustomerData));
-
-            MessagingManager.Instance.ReceiveMessage(new(msg, Message.ESenderType.Other), true, __instance.NPC.ID);
-            state.LastNotification = TimeManager.Instance.Playtime;
         }
     }
 }

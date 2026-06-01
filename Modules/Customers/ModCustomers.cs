@@ -35,6 +35,24 @@ namespace Lithium.Modules.Customers
         public float QualityLevelModifier { get; set; } = 0.2f;
         public bool IncludeDrugPreference { get; set; } = true;
         public float BaseAcceptance { get; set; } = 0.0f;
+        // When true, a sample that covers none of the customer's desired effects is rejected outright
+        // (no quality / drug-affinity / base-acceptance fallback can carry it).
+        public bool RequireEffectMatch { get; set; } = true;
+        // How many quality tiers ABOVE the customer's standard still add acceptance. Caps the quality
+        // bonus so over-delivering (e.g. a Heavenly sample to someone who'd accept Trash) doesn't
+        // overboard or rescue a poorly-covered sample. Under-standard quality is always fully penalised.
+        public int MaxQualityOverDeliveryLevels { get; set; } = 1;
+        // Exponent applied to a positive drug-type affinity (0..1) to get the acceptance multiplier.
+        // Below 1 makes acceptance climb quickly for modest affinity (0.5 = square root: 0.25 affinity
+        // -> 0.5x instead of 0.25x). Affinity of 0 or below still yields 0% (disliked types rejected).
+        public float DrugAffinitySharpness { get; set; } = 0.5f;
+    }
+
+    public class DirectSales
+    {
+        // When true, a direct (in-person) offer is rejected outright unless at least one offered
+        // product covers a desired effect — same hard requirement contracts use, no fallback.
+        public bool RequireEffectMatch { get; set; } = true;
     }
 
     public class Contracts
@@ -58,14 +76,53 @@ namespace Lithium.Modules.Customers
             "Yo ##DEALER## still hasn't got anything ##DESIRES##? Dang!",
             "##DESIRES## ... come on, can't be that hard for ##DEALER## to find, right?"
         ];
+
+        // When neither the player nor the dealer offers a product matching the customer's desired
+        // effects, the customer still buys a substitute — but pays this fraction of the product's
+        // DEFAULT market value (not the player's listed price). 0.75 = 25% below default value.
+        public float ReducedDealPriceMultiplier { get; set; } = 0.75f;
+
+        // Texts sent when the customer settles for a non-matching product at the reduced price.
+        public string[] ReducedSaleTemplates { get; set; } =
+        [
+            "Couldn't find anything ##DESIRES##, so I grabbed something else — paying less for it though.",
+            "You had nothing ##DESIRES##, so I settled for a substitute at a lower price.",
+            "No ##DESIRES##? I'll take something else, but I'm not paying full price for it.",
+            "Bought something off you, but since it wasn't ##DESIRES## I knocked the price down."
+        ];
+        public string[] ReducedDealerTemplates { get; set; } =
+        [
+            "##DEALER## had nothing ##DESIRES##, so I took a substitute at a lower price.",
+            "Since ##DEALER## didn't have ##DESIRES##, I settled for something cheaper.",
+            "No ##DESIRES## from ##DEALER## — bought something else, but paid less for it.",
+            "Got something from ##DEALER##, but it wasn't ##DESIRES## so I paid a reduced price."
+        ];
+    }
+
+    public class OrderPatterns
+    {
+        public bool Enabled { get; set; }
+    }
+
+    public class CoverageNotifications
+    {
+        public bool Enabled { get; set; }
+        // The existing in-game NPC whose Messages conversation is repurposed as the "Lithium" contact.
+        public string ContactNpcName { get; set; } = "Manny Oakfield";
+        public string ContactDisplayName { get; set; } = "Lithium";
+        // When true, each coverage text also lists every customer that is still uncovered.
+        public bool ListUncovered { get; set; }
     }
 
     public class ModCustomersConfiguration : ModuleConfiguration
     {
         public override string Name => "Customers";
         public SampleOffering SampleOffering { get; set; } = new SampleOffering();
+        public DirectSales DirectSales { get; set; } = new DirectSales();
         public Contracts Contracts { get; set; } = new Contracts();
         public EffectBonus EffectBonus { get; set; } = new EffectBonus();
+        public OrderPatterns OrderPatterns { get; set; } = new OrderPatterns();
+        public CoverageNotifications Coverage { get; set; } = new CoverageNotifications();
     }
 
     public class ModCustomers : ModuleBase<ModCustomersConfiguration>
@@ -80,6 +137,9 @@ namespace Lithium.Modules.Customers
 
         public override void Apply()
         {
+            // New save/scene: drop the cached coverage baseline so it re-snapshots fresh.
+            ProductCoverageNotifier.Reset();
+
             if (!Configuration.Enabled)
                 return;
         }

@@ -1,5 +1,4 @@
-﻿//using Lithium.Modules.Employees.Patches;
-using Il2CppScheduleOne.Employees;
+﻿using Il2CppScheduleOne.Employees;
 
 namespace Lithium.Modules.Employees
 {

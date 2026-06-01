@@ -1,3 +1,4 @@
+using System.Reflection;
 using HarmonyLib;
 using Il2CppFishNet;
 using Il2CppScheduleOne.Growing;
@@ -11,9 +12,21 @@ namespace Lithium.Modules.PlantGrowth.Patches
     // bump QualityLevel around the call and restore it afterwards (the created item keeps the rolled
     // quality). The botanist's randomised QUANTITY is handled separately in HarvestPotBehaviourYieldPatch
     // (GetQuantityToHarvest), so we only touch quality here.
-    [HarmonyPatch(typeof(Plant), nameof(Plant.GetHarvestedProduct))]
+    //
+    // IMPORTANT: GetHarvestedProduct is virtual and the concrete plants (WeedPlant, CocaPlant) OVERRIDE
+    // it. Harmony patches a specific MethodInfo, so a patch on the base Plant.GetHarvestedProduct never
+    // fires for those subclasses (virtual dispatch goes straight to the override). We must therefore
+    // patch the overrides themselves. We patch only the concrete overrides — not the base — so a
+    // subclass that happened to call base.GetHarvestedProduct wouldn't double-apply the bump.
+    [HarmonyPatch]
     public class PlantGetHarvestedProductPatch
     {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(WeedPlant), nameof(WeedPlant.GetHarvestedProduct), [typeof(int)]);
+            yield return AccessTools.Method(typeof(CocaPlant), nameof(CocaPlant.GetHarvestedProduct), [typeof(int)]);
+        }
+
         [HarmonyPrefix]
         public static void Prefix(Plant __instance, out float __state)
         {
@@ -32,8 +45,13 @@ namespace Lithium.Modules.PlantGrowth.Patches
             if (PlantHarvestablePatch.PlayerHarvestInProgress)
                 return;
 
-            __state = __instance.QualityLevel;
-            __instance.QualityLevel += configuration.RandomYieldQualityPicker.Evaluate(UnityEngine.Random.value);
+            // Same clean calculation the player path uses: vanilla base + additive QualityChange,
+            // plus a random offset. Ignores the unreliable stored QualityLevel and restores to the
+            // clean base afterwards.
+            float baseQuality = HarvestQuality.ComputeBaseQuality(__instance);
+            float offset = configuration.RandomYieldQualityPicker.Evaluate(UnityEngine.Random.value);
+            __state = baseQuality;
+            __instance.QualityLevel = UnityEngine.Mathf.Clamp01(baseQuality + offset);
         }
 
         [HarmonyPostfix]

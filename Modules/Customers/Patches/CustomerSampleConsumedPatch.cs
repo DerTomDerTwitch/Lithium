@@ -41,7 +41,10 @@ namespace Lithium.Modules.Customers.Patches
                     productEffects,
                     __instance.CustomerData.DefaultAffinityData,
                     config.SampleOffering.IncludeDrugPreference,
-                    config.SampleOffering.BaseAcceptance);
+                    config.SampleOffering.BaseAcceptance,
+                    config.SampleOffering.RequireEffectMatch,
+                    config.SampleOffering.MaxQualityOverDeliveryLevels,
+                    config.SampleOffering.DrugAffinitySharpness);
             }
 
             __result = sum / items.Count;

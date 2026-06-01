@@ -29,16 +29,24 @@ namespace Lithium.Modules.PlantGrowth.Patches
             PlayerHarvestInProgress = true;
 
             Plant componentInParent = __instance.GetComponentInParent<Plant>();
+            // Clean base recomputed from scratch (vanilla 0.5 + additive QualityChange); ignores the
+            // unreliable stored QualityLevel. Same calculation the botanist path uses.
+            float baseQuality = HarvestQuality.ComputeBaseQuality(componentInParent);
+
             if (!componentInParent.TryGetComponent(out PlantBaseQuality comp))
             {
-                PlantBaseQuality pbq = componentInParent.gameObject.AddComponent<PlantBaseQuality>();
-                pbq.Quality = componentInParent.QualityLevel;
-                pbq.NeedsNotification = true;
+                comp = componentInParent.gameObject.AddComponent<PlantBaseQuality>();
+                // Restore to the clean base after harvest — this also heals any plant whose stored
+                // QualityLevel was corrupted by earlier builds.
+                comp.Quality = baseQuality;
+                comp.NeedsNotification = true;
             }
 
             if (!GenerateFlags.ContainsKey(__instance))
             {
-                componentInParent.QualityLevel += configuration.RandomYieldQualityPicker.Evaluate(UnityEngine.Random.value);
+                // Per-bud roll around the clean base.
+                float offset = configuration.RandomYieldQualityPicker.Evaluate(UnityEngine.Random.value);
+                componentInParent.QualityLevel = UnityEngine.Mathf.Clamp01(baseQuality + offset);
                 __instance.ProductQuantity = (int)configuration.RandomYieldPerBudPicker.Pick();
                 GenerateFlags[__instance] = true;
             }
@@ -73,14 +81,26 @@ namespace Lithium.Modules.PlantGrowth.Patches
                 return;
 
             Plant componentInParent = __instance.GetComponentInParent<Plant>();
-            if (componentInParent.TryGetComponent(out PlantBaseQuality comp) && comp.NeedsNotification)
+            if (componentInParent.TryGetComponent(out PlantBaseQuality comp))
             {
-                EQuality quality = ItemQuality.GetQuality(componentInParent.QualityLevel);
+                // One notification per plant, showing the first bud's rolled quality.
+                if (comp.NeedsNotification)
+                {
+                    EQuality quality = ItemQuality.GetQuality(componentInParent.QualityLevel);
 
-                NotificationsManager.Instance.SendNotification($"{__instance.ProductQuantity}x {componentInParent.SeedDefinition.Name}",
-                    $"{quality:G} quality", componentInParent.SeedDefinition.Icon, 2f, false);
+                    NotificationsManager.Instance.SendNotification($"{__instance.ProductQuantity}x {componentInParent.SeedDefinition.Name}",
+                        $"{quality:G} quality", componentInParent.SeedDefinition.Icon, 2f, false);
+                    comp.NeedsNotification = false;
+                }
+
+                // Restore the plant's base quality after EVERY bud — not only the notifying one.
+                // A whole-plant harvest fires Harvest once per bud, all in the same frame, and
+                // Object.Destroy is deferred to end-of-frame, so every bud after the first reuses
+                // this same component. Gating the restore on NeedsNotification (true only for the
+                // first bud) left the per-bud quality offset stacking across buds, so quality
+                // random-walked into Trash/Heavenly. Restoring unconditionally keeps each bud's
+                // roll independent around the true base quality.
                 componentInParent.QualityLevel = comp.Quality;
-                comp.NeedsNotification = false;
                 Object.Destroy(comp);
             }
         }

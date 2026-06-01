@@ -34,6 +34,11 @@ namespace Lithium.Modules
             {
                 string json = File.ReadAllText(configFilePath);
                 JsonConvert.PopulateObject(json, this);
+
+                // Re-save the merged config so fields added in a newer mod version are populated into
+                // the file with their defaults. PopulateObject above keeps the user's existing values;
+                // re-serializing only fills in the missing keys (and drops any obsolete ones).
+                SaveConfiguration();
             }
             else
             {
