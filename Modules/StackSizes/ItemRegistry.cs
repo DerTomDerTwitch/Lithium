@@ -34,7 +34,7 @@ namespace Lithium.Modules.StackSizes
             }
             else
             {
-                MelonLogger.Warning($"Found item for category {itemDefinition.Category}, but no category value");
+                Log.Warning($"Found item for category {itemDefinition.Category}, but no category value");
             }
         }
     }

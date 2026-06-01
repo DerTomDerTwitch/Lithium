@@ -63,7 +63,7 @@ namespace Lithium.Modules.Customers.BonusPayments
 
                 float itemBonus = fixedPart + percentPart;
                 totalBonusAmount += itemBonus;
-                MelonLogger.Msg($"Effect match boni for item {pd.Name}: x{quantity} (matches: {matchCount}) Fixed: {fixedPart} Percent: {percentPart} Total: {itemBonus}");
+                Log.Info($"Effect match boni for item {pd.Name}: x{quantity} (matches: {matchCount}) Fixed: {fixedPart} Percent: {percentPart} Total: {itemBonus}");
             }
 
             if (totalBonusAmount <= 0f)

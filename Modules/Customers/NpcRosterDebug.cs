@@ -52,11 +52,11 @@ namespace Lithium.Modules.Customers
                 Directory.CreateDirectory(dir);
                 string path = Path.Combine(dir, "NpcRoster.txt");
                 File.WriteAllText(path, sb.ToString());
-                Core.Logger.Msg($"[NpcRoster] Wrote {npcs.Count} NPCs to {path}");
+                Log.Info($"[NpcRoster] Wrote {npcs.Count} NPCs to {path}");
             }
             catch (Exception ex)
             {
-                Core.Logger.Error($"[NpcRoster] Dump failed: {ex}");
+                Log.Error($"[NpcRoster] Dump failed: {ex}");
             }
         }
     }

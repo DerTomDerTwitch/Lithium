@@ -16,8 +16,10 @@ namespace Lithium.Modules.Customers.Architecture
     /// <summary>
     /// A customer's weekly ordering pattern, derived deterministically from their name. Both the
     /// GetOrderDays patch (frequency) and the contract-generation patch (quantity) build this
-    /// independently from the same inputs and must agree, so <see cref="Create"/> is pure: it reads
-    /// nothing but its arguments and consumes the seeded RNG in a fixed order.
+    /// independently from the same inputs and must agree, so <see cref="Create"/> is deterministic: it
+    /// consumes the seeded RNG in a fixed order and, beyond its arguments, only reads the configured
+    /// archetype weights — which are stable within a session, so both call sites still produce the same
+    /// pattern for a given name.
     /// </summary>
     public class OrderPatternProfile
     {
@@ -32,6 +34,26 @@ namespace Lithium.Modules.Customers.Architecture
         /// more days ⇒ smaller orders.
         /// </summary>
         public float QuantityMultiplier { get; private set; }
+
+        /// <summary>
+        /// Whole days from <paramref name="today"/> until this customer's next order day (1–7). If
+        /// today is their only order day, returns 7 (a week from now) rather than 0 — they've just
+        /// ordered, so the next occurrence is the following week.
+        /// </summary>
+        public int DaysUntilNextOrder(EDay today)
+        {
+            int from = (int)today;
+            int best = 7;
+            foreach (EDay day in OrderDays)
+            {
+                int delta = (((int)day - from) % 7 + 7) % 7;
+                if (delta == 0)
+                    delta = 7;
+                if (delta < best)
+                    best = delta;
+            }
+            return best;
+        }
 
         public static OrderPatternProfile Create(string customerName, int minOrdersPerWeek, int maxOrdersPerWeek)
         {
@@ -56,12 +78,18 @@ namespace Lithium.Modules.Customers.Architecture
 
         private static OrderPatternArchetype PickArchetype(Random rng)
         {
+            OrderPatternWeights weights = Core.Get<ModCustomers>().Configuration.OrderPatterns.ArchetypeWeights;
+
+            // Fixed add order so the pick stays deterministic for a given seed (both the GetOrderDays and
+            // contract-generation call sites must agree). Weights come from config but are stable within a
+            // session, and Pick() consumes exactly one RNG draw regardless of them, so the two sites stay
+            // in sync. Negative weights are clamped to 0.
             WeightedPicker<OrderPatternArchetype> picker = new WeightedPicker<OrderPatternArchetype>(rng);
-            picker.Add(OrderPatternArchetype.DailySmall, 30f);
-            picker.Add(OrderPatternArchetype.EveryTwoDays, 25f);
-            picker.Add(OrderPatternArchetype.Irregular, 20f);
-            picker.Add(OrderPatternArchetype.BiWeekly, 10f);
-            picker.Add(OrderPatternArchetype.WeeklyBulk, 15f);
+            picker.Add(OrderPatternArchetype.WeeklyBulk, Math.Max(0f, weights.WeeklyBulk));
+            picker.Add(OrderPatternArchetype.BiWeekly, Math.Max(0f, weights.BiWeekly));
+            picker.Add(OrderPatternArchetype.Irregular, Math.Max(0f, weights.Irregular));
+            picker.Add(OrderPatternArchetype.EveryTwoDays, Math.Max(0f, weights.EveryTwoDays));
+            picker.Add(OrderPatternArchetype.DailySmall, Math.Max(0f, weights.DailySmall));
             return picker.Pick();
         }
 

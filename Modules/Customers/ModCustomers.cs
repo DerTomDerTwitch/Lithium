@@ -96,6 +96,9 @@ namespace Lithium.Modules.Customers
         // Larger orders grant a longer window to accept the offer (and the customer texts the deadline).
         public AcceptanceWindow AcceptanceWindow { get; set; } = new AcceptanceWindow();
 
+        // How the ordered product(s) are chosen — coverage preference and optional second product.
+        public ProductSelection ProductSelection { get; set; } = new ProductSelection();
+
         // Texts sent when the customer settles for a non-matching product at the reduced price.
         public string[] ReducedSaleTemplates { get; set; } =
         [
@@ -113,9 +116,61 @@ namespace Lithium.Modules.Customers
         ];
     }
 
+    // Controls which product(s) a customer asks for, weighted toward effect coverage.
+    public class ProductSelection
+    {
+        // Higher = customers much more strongly prefer products covering more of their desired effects.
+        // A candidate's pick weight is coverage^Exponent (coverage = how many desired effects it
+        // carries). 3 => a 3-effect match is 27x as likely as a 1-effect match. Products covering no
+        // desired effect are never picked when the customer has desires (weight 0).
+        public float CoverageBiasExponent { get; set; } = 3f;
+
+        // When true, a matching order has a chance to include a second, different product.
+        public bool EnableSecondProduct { get; set; } = true;
+
+        // Probability (0..1) that an eligible matching order gains a second product.
+        public float SecondProductChance { get; set; } = 0.5f;
+
+        // Fraction (0..1) of the order quantity reallocated to the second product (the first keeps the
+        // rest). ~0.25 = a quarter of the units go to the second product.
+        public float SecondProductQuantityShare { get; set; } = 0.25f;
+    }
+
+    // Relative likelihood of each ordering scheme (any non-negative numbers; they need not sum to 100).
+    // Larger intervals (fewer order days per week) are weighted higher by default, so weekly and
+    // twice-weekly customers are more common than daily ones.
+    public class OrderPatternWeights
+    {
+        public float WeeklyBulk { get; set; } = 35f;    // 1 day / week    — largest interval
+        public float BiWeekly { get; set; } = 28f;      // 2 days / week
+        public float Irregular { get; set; } = 18f;     // 2-4 days / week
+        public float EveryTwoDays { get; set; } = 12f;  // 3-4 days / week
+        public float DailySmall { get; set; } = 7f;     // 6-7 days / week — smallest interval
+    }
+
     public class OrderPatterns
     {
         public bool Enabled { get; set; }
+
+        // Relative likelihood of each ordering scheme (see OrderPatternWeights).
+        public OrderPatternWeights ArchetypeWeights { get; set; } = new OrderPatternWeights();
+
+        // After a customer completes a direct order with the player, they text roughly when they'll
+        // next order (their next pattern order day).
+        public bool AnnounceNextOrder { get; set; } = true;
+
+        // Show the customer's order pattern (days + cadence) in the phone Contacts customer panel, next
+        // to their desires. Only shown when order patterns are actually in effect (Enabled + XP met).
+        public bool ShowPatternInContactPanel { get; set; } = true;
+
+        // ##DAY## = when they'll next order, e.g. "tomorrow", "on Wednesday" or "next Monday".
+        public string[] NextOrderTemplates { get; set; } =
+        [
+            "Thanks, good doing business! I'll hit you up again ##DAY##.",
+            "Appreciate it — I'll call you back ##DAY##.",
+            "Solid as always. Expect to hear from me ##DAY##.",
+            "Nice doing business. I'll be in touch again ##DAY##."
+        ];
     }
 
     // Larger orders give the player more time to accept the offer: the acceptance window
@@ -135,16 +190,19 @@ namespace Lithium.Modules.Customers
         // Hard cap on the total acceptance window, in in-game minutes (1440 = one in-game day).
         public int MaxWindowMinutes { get; set; } = 10080; // 7 in-game days
 
-        // When true, the customer sends a follow-up text stating the response deadline for large orders.
+        // When true, the customer sends a follow-up text telling the player how long they have to accept
+        // the offer. Sent for EVERY expiring offer (not just extended ones), and works even when the
+        // window extension above is disabled.
         public bool SendDeadlineMessage { get; set; } = true;
 
-        // ##QUANTITY## = units ordered, ##DEADLINE## = formatted deadline (e.g. "Monday, 12:00 PM").
-        public string[] DeadlineTemplates { get; set; } =
+        // Follow-up deadline texts. ##DEADLINE## = when the offer expires (e.g. "Monday, 12:00 PM");
+        // ##QUANTITY## = units ordered (optional).
+        public string[] OfferDeadlineTemplates { get; set; } =
         [
-            "That's a big one — ##QUANTITY## units. No rush, just let me know by ##DEADLINE##.",
-            "##QUANTITY## units is a serious order, so take your time. I'll need an answer by ##DEADLINE## though.",
-            "Since I'm after ##QUANTITY## this time, I'll give you until ##DEADLINE## to confirm.",
-            "Big order (##QUANTITY## units) — let me know by ##DEADLINE##."
+            "You've got until ##DEADLINE## to let me know.",
+            "Let me know by ##DEADLINE##.",
+            "I'll need your answer by ##DEADLINE##.",
+            "Hit me back by ##DEADLINE## or I'll assume you're not interested."
         ];
     }
 

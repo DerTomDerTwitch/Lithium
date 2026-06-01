@@ -42,6 +42,10 @@ namespace Lithium.Helper
 
         public static bool ProductMatchesDesires(ProductDefinition pd, List<string> desires) => pd.Properties.ToList().Select(p => p.Name).Intersect(desires).Any();
 
+        // How many of the customer's desired effects this product carries (0 = covers none).
+        public static int CoveredEffectCount(ProductDefinition pd, List<string> desires) =>
+            pd.Properties.ToList().Select(p => p.Name).Intersect(desires).Count();
+
         public static string FormatDesires(CustomerData customerData) => customerData.PreferredProperties.ToList().Select(p => p.Name).SmartJoin(", ", " or ");
 
         public static int GetMatchCount(ProductDefinition pd, List<string> desires)

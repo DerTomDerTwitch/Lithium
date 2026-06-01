@@ -29,7 +29,7 @@ namespace Lithium.Modules.PropertyPrices.Patches
             {
                 if (!configuration.PropertyPrices.TryGetValue(prop.PropertyName, out int price))
                 {
-                    MelonLoader.MelonLogger.Warning(
+                    Log.Warning(
                         $"Property {prop.PropertyName} not found in configuration. Skipping.");
                     continue;
                 }

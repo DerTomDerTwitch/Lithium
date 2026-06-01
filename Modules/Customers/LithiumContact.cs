@@ -17,7 +17,7 @@ namespace Lithium.Modules.Customers
             NPC npc = Resolve(config.Coverage.ContactNpcName);
             if (npc == null)
             {
-                Core.Logger.Warning($"[Lithium] Coverage contact NPC '{config.Coverage.ContactNpcName}' not found; message dropped.");
+                Log.Warning($"[Lithium] Coverage contact NPC '{config.Coverage.ContactNpcName}' not found; message dropped.");
                 return;
             }
 

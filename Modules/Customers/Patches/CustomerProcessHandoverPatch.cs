@@ -58,7 +58,7 @@ namespace Lithium.Modules.Customers.Patches
                 return;
 
             totalPayment = Mathf.Clamp(totalPayment + effectBonus, 0f, float.MaxValue);
-            MelonLogger.Msg($"[Lithium] Effect match bonus applied: +{effectBonus} (new payout {totalPayment})");
+            Log.Info($"[Lithium] Effect match bonus applied: +{effectBonus} (new payout {totalPayment})");
         }
     }
 }

@@ -18,6 +18,15 @@ namespace Lithium.Modules.Customers.Patches
     [HarmonyPatch(typeof(Customer), nameof(Customer.TryGenerateContract))]
     public class CustomerContractGenerationPatch
     {
+        // TryGenerateContract's postfix fires more than once on the SAME ContractInfo within one
+        // generation pass (the game reprocesses the customer's pending contract), which compounded the
+        // bulk multiplier — e.g. 11 -> 66 -> 396. We scale each contract at most once, keyed by native
+        // pointer. The guard set is scoped to the current frame: the duplicate calls happen in the same
+        // synchronous pass, so a per-frame set both catches the repeat and stays small — no unbounded
+        // growth, and no risk of a GC-reused pointer matching a stale entry (entries never outlive a frame).
+        private static readonly HashSet<IntPtr> _scaledThisFrame = new();
+        private static int _scaledFrame = -1;
+
         [HarmonyPostfix]
         public static void Postfix(ref ContractInfo __result, Customer __instance, Dealer dealer)
         {
@@ -73,6 +82,25 @@ namespace Lithium.Modules.Customers.Patches
 
             float qtyMultiplier = pattern?.QuantityMultiplier ?? 1f;
 
+            // Guard against the duplicate generation call re-scaling the same contract (see field note).
+            int frame = Time.frameCount;
+            if (frame != _scaledFrame)
+            {
+                _scaledThisFrame.Clear();
+                _scaledFrame = frame;
+            }
+            if (!_scaledThisFrame.Add(__result.Pointer))
+            {
+                Log.Info($"[Lithium] Skipped duplicate contract generation for {__instance.CustomerData.name}.");
+                return;
+            }
+
+            if (pattern != null && Log.DebugEnabled)
+                Log.Info($"[Lithium] OrderGen {__instance.CustomerData.name}: " +
+                    $"gameBase={__result.Products.entries.ToList().Sum(e => e.Quantity)}, " +
+                    $"ordersPerWeek={__instance.CustomerData.MinOrdersPerWeek}-{__instance.CustomerData.MaxOrdersPerWeek}, " +
+                    $"archetype={pattern.Archetype}, days={pattern.OrderDays.Count}, mult={qtyMultiplier:F2}");
+
             if (__instance.AssignedDealer != null)
             {
                 // dealerItems = everything the dealer currently holds, regardless of effect match.
@@ -94,25 +122,23 @@ namespace Lithium.Modules.Customers.Patches
                     .Where(p => ProductHelper.ProductMatchesDesires(p, desires))
                     .ToList();
 
-                bool reduced = matching.Count == 0;
-                ProductDefinition chosen = (reduced ? dealerProducts : matching)
-                    .OrderBy(x => UnityEngine.Random.value)
-                    .First();
-
-                int available = dealerItems.Where(i => i.ID == chosen.ID).Sum(i => i.Quantity);
-                RewireOrderedProduct(__result, chosen.ID, quality, Mathf.Max(1, available), qtyMultiplier);
-
-                if (reduced)
+                if (matching.Count == 0)
                 {
                     // Nothing in the dealer's stock matches the wanted effects: still sell, but below
                     // the product's default value, and tell the player it was a reduced substitute.
+                    ProductDefinition chosen = dealerProducts.OrderBy(x => UnityEngine.Random.value).First();
+                    int available = dealerItems.Where(i => i.ID == chosen.ID).Sum(i => i.Quantity);
+                    RewireOrderedProduct(__result, chosen.ID, quality, Mathf.Max(1, available), qtyMultiplier);
                     ApplyReducedPayment(__result, chosen);
                     CustomerNotifier.NotifyDealerReducedDeal(__instance);
                 }
-                else if (config.Contracts.DealerSellAtListedPrice)
+                else
                 {
-                    // The dealer sells at the player's set price instead of the game's standard value.
-                    ApplyListedPricePayment(__result, chosen);
+                    // Prefer higher-coverage products (and maybe add a second one), capped by the
+                    // dealer's stock for each chosen product. Pays the player's set price when enabled.
+                    ComposeMatchingOrder(__result, matching, desires, quality, qtyMultiplier,
+                        p => dealerItems.Where(i => i.ID == p.ID).Sum(i => i.Quantity),
+                        config.Contracts.DealerSellAtListedPrice);
                 }
             }
             else
@@ -129,22 +155,27 @@ namespace Lithium.Modules.Customers.Patches
                     .Where(p => ProductHelper.ProductMatchesDesires(p, desires))
                     .ToList();
 
-                bool reduced = matching.Count == 0;
-                // Direct (non-dealer) sales have no stock ceiling, so RewireOrderedProduct uses
-                // int.MaxValue — bulk-pattern customers can order above the game's base quantity.
-                ProductDefinition chosen = (reduced ? listed : matching)
-                    .OrderBy(x => UnityEngine.Random.value)
-                    .First();
-
-                RewireOrderedProduct(__result, chosen.ID, quality, int.MaxValue, qtyMultiplier);
-
-                if (reduced)
+                if (matching.Count == 0)
                 {
                     // No listed product matches the wanted effects: still sell at a reduced price.
+                    ProductDefinition chosen = listed.OrderBy(x => UnityEngine.Random.value).First();
+                    RewireOrderedProduct(__result, chosen.ID, quality, int.MaxValue, qtyMultiplier);
                     ApplyReducedPayment(__result, chosen);
                     CustomerNotifier.NotifyPlayerReducedDeal(__instance);
                 }
+                else
+                {
+                    // Prefer higher-coverage products (and maybe add a second one). Direct sales have no
+                    // stock ceiling, so each product's available quantity is unbounded.
+                    ComposeMatchingOrder(__result, matching, desires, quality, qtyMultiplier,
+                        _ => int.MaxValue, useListedPrice: false);
+                }
             }
+
+            if (__result != null && Log.DebugEnabled)
+                Log.Info($"[Lithium] Contract for {__instance.CustomerData.name}: " +
+                    string.Join(", ", __result.Products.entries.ToList().Select(e => $"{e.Quantity}x {e.ProductID}")) +
+                    $" = ${__result.Payment:F0}");
 
             // A fresh offer reached the player — the retry obligation (if any) is fulfilled. A later
             // refusal/expiry re-arms it for the following day.
@@ -161,17 +192,117 @@ namespace Lithium.Modules.Customers.Patches
             __result.Payment = product.MarketValue * qty * config.Contracts.ReducedDealPriceMultiplier;
         }
 
-        // Sets the deal payment to the player's set product price (ProductManager listed price) times
-        // the final order quantity, replacing the game's standard-market-value payout for dealer deals.
-        // Falls back to leaving the game's payment untouched if the price manager isn't available yet.
-        private static void ApplyListedPricePayment(ContractInfo __result, ProductDefinition product)
+        // Builds the ordered product(s) for a matching (effect-covering) deal. Picks a primary product
+        // weighted heavily toward effect coverage, optionally adds a different second product that takes
+        // a share of the quantity, and prices the deal — at the player's set price when useListedPrice is
+        // on, otherwise by scaling the game's per-unit roll. availableOf gives the cap per product (the
+        // dealer's stock, or int.MaxValue for direct sales).
+        private static void ComposeMatchingOrder(
+            ContractInfo __result,
+            List<ProductDefinition> matching,
+            List<string> desires,
+            EQuality quality,
+            float quantityMultiplier,
+            Func<ProductDefinition, int> availableOf,
+            bool useListedPrice)
         {
-            ProductManager manager = NetworkSingleton<ProductManager>.Instance;
-            if (manager == null)
-                return;
+            ProductSelection selection = Core.Get<ModCustomers>().Configuration.Contracts.ProductSelection;
 
-            int qty = __result.Products.entries.ToList().Sum(e => e.Quantity);
-            __result.Payment = manager.GetPrice(product) * qty;
+            // Baseline from the game's roll (its per-unit price already bakes in quality and markup).
+            int desiredQuantity = __result.Products.entries.ToList().Sum(e => e.Quantity);
+            float originalPayment = __result.Payment;
+            int scaled = Mathf.Max(1, Mathf.RoundToInt(desiredQuantity * quantityMultiplier));
+
+            ProductDefinition primary = PickWeightedByCoverage(matching, desires, selection.CoverageBiasExponent);
+
+            // Maybe pick a second, different product — also weighted toward coverage.
+            ProductDefinition secondary = null;
+            if (selection.EnableSecondProduct && matching.Count > 1 &&
+                UnityEngine.Random.value < selection.SecondProductChance)
+            {
+                List<ProductDefinition> others = matching.Where(p => p.ID != primary.ID).ToList();
+                if (others.Count > 0)
+                    secondary = PickWeightedByCoverage(others, desires, selection.CoverageBiasExponent);
+            }
+
+            int primaryCap = Mathf.Max(1, availableOf(primary));
+            int primaryQty;
+            int secondaryQty = 0;
+
+            if (secondary != null)
+            {
+                // The second product takes a share of the order; the first keeps the remainder. Each is
+                // still capped by its own available stock.
+                int secondaryCap = Mathf.Max(0, availableOf(secondary));
+                secondaryQty = Mathf.Clamp(Mathf.RoundToInt(scaled * selection.SecondProductQuantityShare), 0, secondaryCap);
+                primaryQty = Mathf.Min(scaled - secondaryQty, primaryCap);
+
+                if (secondaryQty <= 0 || primaryQty <= 0)
+                {
+                    // Couldn't actually split (e.g. no stock for the second product) — single product.
+                    secondary = null;
+                    secondaryQty = 0;
+                    primaryQty = Mathf.Max(1, Mathf.Min(scaled, primaryCap));
+                }
+            }
+            else
+            {
+                primaryQty = Mathf.Max(1, Mathf.Min(scaled, primaryCap));
+            }
+
+            ProductList list = new();
+            list.entries.Add(new() { ProductID = primary.ID, Quality = quality, Quantity = primaryQty });
+            if (secondary != null && secondaryQty > 0)
+                list.entries.Add(new() { ProductID = secondary.ID, Quality = quality, Quantity = secondaryQty });
+            __result.Products = list;
+
+            int total = primaryQty + secondaryQty;
+
+            ProductManager manager = useListedPrice ? NetworkSingleton<ProductManager>.Instance : null;
+            if (manager != null)
+            {
+                // Player's set price per product times its quantity.
+                float payment = manager.GetPrice(primary) * primaryQty;
+                if (secondary != null && secondaryQty > 0)
+                    payment += manager.GetPrice(secondary) * secondaryQty;
+                __result.Payment = payment;
+            }
+            else if (desiredQuantity > 0 && total != desiredQuantity)
+            {
+                // Scale the game's roll proportionally to the (possibly bulk-scaled / stock-capped) total.
+                __result.Payment = originalPayment / desiredQuantity * total;
+            }
+        }
+
+        // Picks one product from the candidates, weighted by coverage^exponent so products covering more
+        // of the customer's desired effects are much more likely. Candidates are assumed to cover at
+        // least one effect (coverage >= 1).
+        private static ProductDefinition PickWeightedByCoverage(
+            List<ProductDefinition> candidates, List<string> desires, float exponent)
+        {
+            if (candidates.Count == 1)
+                return candidates[0];
+
+            float[] weights = new float[candidates.Count];
+            float totalWeight = 0f;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                int coverage = Mathf.Max(1, ProductHelper.CoveredEffectCount(candidates[i], desires));
+                weights[i] = Mathf.Pow(coverage, exponent);
+                totalWeight += weights[i];
+            }
+
+            if (totalWeight <= 0f)
+                return candidates[UnityEngine.Random.Range(0, candidates.Count)];
+
+            float roll = UnityEngine.Random.value * totalWeight;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                roll -= weights[i];
+                if (roll <= 0f)
+                    return candidates[i];
+            }
+            return candidates[candidates.Count - 1];
         }
 
         private static void RewireOrderedProduct(ContractInfo __result, string id, EQuality quality, int maxAvailableQuantity, float quantityMultiplier = 1f)

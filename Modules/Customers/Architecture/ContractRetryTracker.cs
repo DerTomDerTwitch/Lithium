@@ -102,7 +102,7 @@ namespace Lithium.Modules.Customers.Architecture
             }
             catch (Exception e)
             {
-                MelonLogger.Warning($"[Lithium] Failed to save contract retries: {e.Message}");
+                Log.Warning($"[Lithium] Failed to save contract retries: {e.Message}");
             }
         }
 
@@ -118,7 +118,7 @@ namespace Lithium.Modules.Customers.Architecture
             }
             catch (Exception e)
             {
-                MelonLogger.Warning($"[Lithium] Failed to load contract retries: {e.Message}");
+                Log.Warning($"[Lithium] Failed to load contract retries: {e.Message}");
                 return null;
             }
         }

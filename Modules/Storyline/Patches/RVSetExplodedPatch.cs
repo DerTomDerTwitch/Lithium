@@ -50,7 +50,7 @@ namespace Lithium.Modules.Storyline.Patches
             }
             else
             {
-                MelonLogger.Msg("Destroyed RV not found");
+                Log.Info("Destroyed RV not found");
             }
 
             return false;

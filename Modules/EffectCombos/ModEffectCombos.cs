@@ -78,7 +78,7 @@ namespace Lithium.Modules.EffectCombos
             List<string> effects = GetAvailableEffectNames();
             if (effects.Count < 2)
             {
-                MelonLogger.Warning("[Lithium] EffectCombos: not enough effects available to generate combos yet.");
+                Log.Warning("[Lithium] EffectCombos: not enough effects available to generate combos yet.");
                 return;
             }
 
@@ -116,7 +116,7 @@ namespace Lithium.Modules.EffectCombos
 
             Configuration.Combos = combos.ToArray();
             Configuration.SaveConfiguration();
-            MelonLogger.Msg($"[Lithium] EffectCombos: generated {combos.Count} effect combos.");
+            Log.Info($"[Lithium] EffectCombos: generated {combos.Count} effect combos.");
         }
 
         private static List<string> GetAvailableEffectNames()
@@ -132,7 +132,7 @@ namespace Lithium.Modules.EffectCombos
             }
             catch (Exception e)
             {
-                MelonLogger.Warning($"[Lithium] EffectCombos: failed to read effects from game ({e.Message}); using fallback list.");
+                Log.Warning($"[Lithium] EffectCombos: failed to read effects from game ({e.Message}); using fallback list.");
             }
 
             if (names.Count < 2)

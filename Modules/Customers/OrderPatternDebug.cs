@@ -58,11 +58,11 @@ namespace Lithium.Modules.Customers
                 string path = Path.Combine(dir, "OrderPatternsDump.txt");
                 File.WriteAllText(path, sb.ToString());
 
-                Core.Logger.Msg($"[OrderPatternDebug] Wrote {customers.Count} customers to {path}");
+                Log.Info($"[OrderPatternDebug] Wrote {customers.Count} customers to {path}");
             }
             catch (Exception ex)
             {
-                Core.Logger.Error($"[OrderPatternDebug] Dump failed: {ex}");
+                Log.Error($"[OrderPatternDebug] Dump failed: {ex}");
             }
         }
 
