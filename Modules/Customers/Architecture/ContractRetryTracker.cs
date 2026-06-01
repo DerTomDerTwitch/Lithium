@@ -1,6 +1,5 @@
 using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.Persistence;
-using Lithium.Helper;
 using MelonLoader;
 using MelonLoader.Utils;
 using Newtonsoft.Json;
@@ -12,8 +11,10 @@ namespace Lithium.Modules.Customers.Architecture
     /// re-attempt an order the next day instead of waiting for their next scheduled order day.
     ///
     /// State is persisted to <c>UserData/Lithium/ContractRetries/&lt;save&gt;.json</c> so it survives
-    /// quitting and reloading. The file is keyed by the loaded save's folder, so each save keeps its own
-    /// outstanding retries (customer names are shared across saves and would otherwise cross-contaminate).
+    /// quitting and reloading. The file is keyed per savegame slot — the slot folder name (e.g.
+    /// "SaveGame_1") combined with the player's organisation name (e.g. "SaveGame_1 - Greenacre") — so
+    /// each save keeps its own outstanding retries. The slot folder guarantees uniqueness even when two
+    /// saves share an organisation name; the name is appended only to make the files human-readable.
     /// </summary>
     public static class ContractRetryTracker
     {
@@ -124,22 +125,43 @@ namespace Lithium.Modules.Customers.Architecture
 
         private static string FilePath(string key) => Path.Combine(StorageFolder, $"{key}.json");
 
-        // A stable, filename-safe id for the loaded save, derived from its folder path. Returns null while
-        // no save is loaded.
+        // A filename-safe, human-readable id for the loaded save slot: the slot folder name (e.g.
+        // "SaveGame_1") plus the organisation name (e.g. "SaveGame_1 - Greenacre"). The folder name alone
+        // already uniquely identifies the slot; the organisation name is appended only for readability.
+        // Returns null until both are available, so the key never changes mid-session (the existing lazy
+        // callers simply retry on the next access — both are populated by contract-generation time).
         private static string ResolveSaveKey()
         {
             try
             {
-                string path = LoadManager.Instance?.LoadedGameFolderPath;
+                LoadManager loadManager = LoadManager.Instance;
+                string path = loadManager?.LoadedGameFolderPath;
                 if (string.IsNullOrEmpty(path))
+                    return null; // save folder not known yet — try again on the next access.
+
+                string slot = new DirectoryInfo(path).Name; // unique per slot, e.g. "SaveGame_1"
+                if (string.IsNullOrEmpty(slot))
                     return null;
 
-                return StableHash.Compute(path).ToString("X8");
+                string organisation = loadManager.ActiveSaveInfo?.OrganisationName;
+                if (string.IsNullOrWhiteSpace(organisation))
+                    return null; // save info not populated yet — retry so the key stays stable.
+
+                return Sanitize($"{slot} - {organisation}");
             }
             catch
             {
                 return null;
             }
+        }
+
+        // Replaces characters that are illegal in file names so the readable key is safe to use as a
+        // filename (organisation names are player-entered and may contain e.g. ':' or '/').
+        private static string Sanitize(string raw)
+        {
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+                raw = raw.Replace(invalid, '_');
+            return raw;
         }
     }
 }

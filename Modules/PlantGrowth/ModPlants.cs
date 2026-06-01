@@ -22,8 +22,8 @@ namespace Lithium.Modules.PlantGrowth
     {
         public override string Name => "Plants";
 
-        public float GrowthModifier = 1f;
-        public float WaterDrainModifier = 1f;
+        public float GrowthModifier = 0.7f;
+        public float WaterDrainModifier = 4f;
 
         // Defaults are produced by factory methods (not shared static lists) so that clearing the
         // instance list in OnBeforeConfigurationLoaded can never corrupt the defaults themselves.

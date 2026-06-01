@@ -12,9 +12,9 @@ namespace Lithium.Modules.DryingRacks
         {
             { nameof(EQuality.Trash), 240 },
             { nameof(EQuality.Poor), 360 },
-            { nameof(EQuality.Standard), 480 },
-            { nameof(EQuality.Premium), 600 },
-            { nameof(EQuality.Heavenly), 720 },
+            { nameof(EQuality.Standard), 720 },
+            { nameof(EQuality.Premium), 800 },
+            { nameof(EQuality.Heavenly), 1200 },
         };
     }
 
