@@ -501,6 +501,7 @@
 		<Compile Include="Modules\Customers\Architecture\BonusPaymentHandler.cs" />
 		<Compile Include="Modules\Customers\Architecture\ContractRetryTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\OrderPatternProfile.cs" />
+		<Compile Include="Modules\Customers\Architecture\OfferAcceptanceWindow.cs" />
 		<Compile Include="Modules\Customers\Behaviours\CustomerNotificationState.cs" />
 		<Compile Include="Modules\Customers\BonusPayments\EffectCoverageBonus.cs" />
 		<Compile Include="Modules\Customers\CustomerNotifier.cs" />
@@ -514,6 +515,8 @@
 		<Compile Include="Modules\Customers\Patches\CustomerContractGenerationPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerContractRejectedPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerExpireOfferPatch.cs" />
+		<Compile Include="Modules\Customers\Patches\CustomerOfferDeadlinePatch.cs" />
+		<Compile Include="Modules\Customers\Patches\CustomerOfferExpiryWindowPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerDailyNotificationPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerGetOrderDaysPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerOfferSuccessPatch.cs" />

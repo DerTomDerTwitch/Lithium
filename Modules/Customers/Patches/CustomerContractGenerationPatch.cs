@@ -1,4 +1,5 @@
 ﻿using HarmonyLib;
+using Il2CppScheduleOne.DevUtilities;
 using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.ItemFramework;
@@ -108,6 +109,11 @@ namespace Lithium.Modules.Customers.Patches
                     ApplyReducedPayment(__result, chosen);
                     CustomerNotifier.NotifyDealerReducedDeal(__instance);
                 }
+                else if (config.Contracts.DealerSellAtListedPrice)
+                {
+                    // The dealer sells at the player's set price instead of the game's standard value.
+                    ApplyListedPricePayment(__result, chosen);
+                }
             }
             else
             {
@@ -153,6 +159,19 @@ namespace Lithium.Modules.Customers.Patches
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
             int qty = __result.Products.entries.ToList().Sum(e => e.Quantity);
             __result.Payment = product.MarketValue * qty * config.Contracts.ReducedDealPriceMultiplier;
+        }
+
+        // Sets the deal payment to the player's set product price (ProductManager listed price) times
+        // the final order quantity, replacing the game's standard-market-value payout for dealer deals.
+        // Falls back to leaving the game's payment untouched if the price manager isn't available yet.
+        private static void ApplyListedPricePayment(ContractInfo __result, ProductDefinition product)
+        {
+            ProductManager manager = NetworkSingleton<ProductManager>.Instance;
+            if (manager == null)
+                return;
+
+            int qty = __result.Products.entries.ToList().Sum(e => e.Quantity);
+            __result.Payment = manager.GetPrice(product) * qty;
         }
 
         private static void RewireOrderedProduct(ContractInfo __result, string id, EQuality quality, int maxAvailableQuantity, float quantityMultiplier = 1f)

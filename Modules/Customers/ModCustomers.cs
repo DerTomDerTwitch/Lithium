@@ -85,9 +85,16 @@ namespace Lithium.Modules.Customers
         // DEFAULT market value (not the player's listed price). 0.75 = 25% below default value.
         public float ReducedDealPriceMultiplier { get; set; } = 0.75f;
 
+        // When a dealer makes a (matching) deal, the customer pays the player's set product price
+        // (ProductManager listed price) rather than the product's standard market value.
+        public bool DealerSellAtListedPrice { get; set; } = true;
+
         // When the player refuses a contract offer, or it expires unanswered, the customer re-attempts
         // an order the next day instead of waiting for their next scheduled order day.
         public bool RetryNextDayOnRefusal { get; set; } = true;
+
+        // Larger orders grant a longer window to accept the offer (and the customer texts the deadline).
+        public AcceptanceWindow AcceptanceWindow { get; set; } = new AcceptanceWindow();
 
         // Texts sent when the customer settles for a non-matching product at the reduced price.
         public string[] ReducedSaleTemplates { get; set; } =
@@ -109,6 +116,36 @@ namespace Lithium.Modules.Customers
     public class OrderPatterns
     {
         public bool Enabled { get; set; }
+    }
+
+    // Larger orders give the player more time to accept the offer: the acceptance window
+    // (ContractInfo.ExpiresAfter, in in-game minutes) is extended for orders above BaseQuantity, on top
+    // of the game's own default window, and the customer texts the resulting deadline.
+    public class AcceptanceWindow
+    {
+        public bool Enabled { get; set; } = true;
+
+        // Orders at or below this quantity keep the game's default acceptance window (vanilla feel).
+        public int BaseQuantity { get; set; } = 10;
+
+        // Extra in-game minutes granted per unit ordered above BaseQuantity, added to the game's default
+        // window. e.g. a 50-unit order at BaseQuantity 10 and 60 min/unit gains 40 * 60 = 2400 mins.
+        public float MinutesPerExtraUnit { get; set; } = 60f;
+
+        // Hard cap on the total acceptance window, in in-game minutes (1440 = one in-game day).
+        public int MaxWindowMinutes { get; set; } = 10080; // 7 in-game days
+
+        // When true, the customer sends a follow-up text stating the response deadline for large orders.
+        public bool SendDeadlineMessage { get; set; } = true;
+
+        // ##QUANTITY## = units ordered, ##DEADLINE## = formatted deadline (e.g. "Monday, 12:00 PM").
+        public string[] DeadlineTemplates { get; set; } =
+        [
+            "That's a big one — ##QUANTITY## units. No rush, just let me know by ##DEADLINE##.",
+            "##QUANTITY## units is a serious order, so take your time. I'll need an answer by ##DEADLINE## though.",
+            "Since I'm after ##QUANTITY## this time, I'll give you until ##DEADLINE## to confirm.",
+            "Big order (##QUANTITY## units) — let me know by ##DEADLINE##."
+        ];
     }
 
     public class CoverageNotifications
