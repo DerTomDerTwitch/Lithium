@@ -1,4 +1,5 @@
 ﻿using Il2CppInterop.Runtime.Injection;
+using Lithium.Helper;
 using Lithium.Modules.PlantGrowth.Behaviours;
 using Lithium.Util;
 using Newtonsoft.Json;
@@ -73,6 +74,15 @@ namespace Lithium.Modules.PlantGrowth
         [JsonIgnore] public WeightedPicker<float> RandomYieldPerBudPicker;
         [JsonIgnore] public WeightedNormalizer RandomYieldModifierPicker;
         [JsonIgnore] public WeightedNormalizer RandomYieldQualityPicker;
+
+        public override void Validate()
+        {
+            // A zero/negative growth modifier would stall or break growth (the patch floors it at 0.001
+            // anyway); a negative water-drain modifier is nonsensical. Warn and clamp rather than let a
+            // typo silently halt every plant.
+            GrowthModifier = ConfigValidator.AtLeast(Name, nameof(GrowthModifier), GrowthModifier, 0.001f);
+            WaterDrainModifier = ConfigValidator.AtLeast(Name, nameof(WaterDrainModifier), WaterDrainModifier, 0f);
+        }
     }
 
     public class ModPlants : ModuleBase<ModPlantsConfiguration>

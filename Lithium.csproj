@@ -489,6 +489,7 @@
 		<Compile Include="LithiumConfig.cs" />
 		<Compile Include="Log.cs" />
 		<Compile Include="Helper\CollectionConverter.cs" />
+		<Compile Include="Helper\ConfigValidator.cs" />
 		<Compile Include="Helper\ProductHelper.cs" />
 		<Compile Include="Helper\StableHash.cs" />
 		<Compile Include="Helper\StringExtensions.cs" />

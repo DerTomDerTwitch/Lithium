@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using Il2CppInterop.Runtime.Injection;
+using Lithium.Helper;
 using Lithium.Modules.Customers.Architecture;
 using Lithium.Modules.Customers.Behaviours;
 using Lithium.Modules.Customers.BonusPayments;
@@ -73,6 +74,13 @@ namespace Lithium.Modules.Customers
         public bool SendNotification { get; set; } = true;
         public bool SendNotificationForDealers { get; set; } = true;
         public int NotificationCooldownInMinutes { get; set; } = 5;
+
+        // Hour-of-day window (24h clock) in which the daily "your offering doesn't cover my effects"
+        // complaint texts are sent. Each customer's exact time is derived deterministically from their
+        // name and spread across this window so the texts don't all arrive at once. Kept in daytime hours
+        // so sleeping (which skips night minutes) doesn't drop a day. Start must be earlier than End.
+        public int NotificationWindowStartHour { get; set; } = 8;
+        public int NotificationWindowEndHour { get; set; } = 22;
         public string[] MessageTemplates { get; set; } =
         [
             "Hey, I wanted to get fresh stuff, but you don't offer good stuff. I prefer ##DESIRES##",
@@ -282,6 +290,25 @@ namespace Lithium.Modules.Customers
         public EffectBonus EffectBonus { get; set; } = new EffectBonus();
         public OrderPatterns OrderPatterns { get; set; } = new OrderPatterns();
         public CoverageNotifications Coverage { get; set; } = new CoverageNotifications();
+
+        public override void Validate()
+        {
+            // The daily-complaint window is used as (End - Start) minutes; a zero/negative or out-of-range
+            // span would break the per-customer slot maths, so clamp to a sane 24h clock and a real window.
+            Contracts.NotificationWindowStartHour = ConfigValidator.InRange(
+                Name, "Contracts.NotificationWindowStartHour", Contracts.NotificationWindowStartHour, 0, 23);
+            Contracts.NotificationWindowEndHour = ConfigValidator.InRange(
+                Name, "Contracts.NotificationWindowEndHour", Contracts.NotificationWindowEndHour, 1, 24);
+            if (Contracts.NotificationWindowStartHour >= Contracts.NotificationWindowEndHour)
+            {
+                Log.Warning($"[Lithium] {Name}: 'Contracts.NotificationWindowStartHour' " +
+                            $"({Contracts.NotificationWindowStartHour}) must be before " +
+                            $"'Contracts.NotificationWindowEndHour' ({Contracts.NotificationWindowEndHour}); " +
+                            "reverting to 8–22.");
+                Contracts.NotificationWindowStartHour = 8;
+                Contracts.NotificationWindowEndHour = 22;
+            }
+        }
     }
 
     public class ModCustomers : ModuleBase<ModCustomersConfiguration>

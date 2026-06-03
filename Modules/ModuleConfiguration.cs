@@ -14,6 +14,13 @@ namespace Lithium.Modules
 
         public string GetConfigFile() => Path.Combine(ConfigFolder, $"{Name}.json");
 
+        /// <summary>
+        /// Override to sanity-check loaded values and log warnings for nonsensical input (e.g. negative
+        /// multipliers, a min above its max). Runs after the JSON has been merged onto this object, so it
+        /// sees the user's actual values. Clamp/correct in place — the defaults make a no-op override fine.
+        /// </summary>
+        public virtual void Validate() { }
+
         public void SaveConfiguration()
         {
             if (!Directory.Exists(ConfigFolder))

@@ -15,9 +15,11 @@ namespace Lithium.Modules.Shops.Patches
         public static void PatchPrices()
         {
             ModShopsConfiguration configuration = Core.Get<ModShops>().Configuration;
-            if(!configuration.Enabled)
-                return;
 
+            // Always populate the config with the live shop/supplier values so the user has a
+            // ready-to-edit template, even while the module (or an individual shop's Override flag)
+            // is disabled. The actual overrides are only applied when Enabled — the population and
+            // application steps are gated independently inside the two helpers below.
             ApplyShopOverrides();
             ApplySupplierOverrides();
             configuration.SaveConfiguration();
@@ -57,19 +59,23 @@ namespace Lithium.Modules.Shops.Patches
             ModShopsConfiguration configuration = Core.Get<ModShops>().Configuration;
             Albert albert = UnityEngine.Object.FindObjectOfType<Albert>();
             AssertSupplierConfigEntryExists(ref configuration.Albert, albert);
-            ApplySupplierConfigValues(configuration.Albert, albert);
+            if (configuration.Enabled)
+                ApplySupplierConfigValues(configuration.Albert, albert);
 
             Shirley shirley = UnityEngine.Object.FindObjectOfType<Shirley>();
             AssertSupplierConfigEntryExists(ref configuration.Shirley, shirley);
-            ApplySupplierConfigValues(configuration.Shirley, shirley);
+            if (configuration.Enabled)
+                ApplySupplierConfigValues(configuration.Shirley, shirley);
 
             Salvador salvador = UnityEngine.Object.FindObjectOfType<Salvador>();
             AssertSupplierConfigEntryExists(ref configuration.Salvador, salvador);
-            ApplySupplierConfigValues(configuration.Salvador, salvador);
+            if (configuration.Enabled)
+                ApplySupplierConfigValues(configuration.Salvador, salvador);
 
             Phil phil = UnityEngine.Object.FindObjectOfType<Phil>();
             AssertSupplierConfigEntryExists(ref configuration.Phil, phil);
-            ApplySupplierConfigValues(configuration.Phil, phil);
+            if (configuration.Enabled)
+                ApplySupplierConfigValues(configuration.Phil, phil);
         }
 
         private static void ApplyShopOverrides()

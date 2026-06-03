@@ -21,9 +21,6 @@ namespace Lithium.Modules.Customers.Patches
     [HarmonyPatch(typeof(TimeManager), nameof(TimeManager.PassMinute))]
     public class CustomerDailyNotificationPatch
     {
-        private const int WindowStartMinute = 8 * 60;   // 08:00
-        private const int WindowEndMinute = 22 * 60;     // 22:00
-
         [HarmonyPostfix]
         public static void Postfix(TimeManager __instance)
         {
@@ -32,6 +29,9 @@ namespace Lithium.Modules.Customers.Patches
                 return;
             if (!config.Contracts.SendNotification && !config.Contracts.SendNotificationForDealers)
                 return;
+
+            int windowStartMinute = config.Contracts.NotificationWindowStartHour * 60;
+            int windowEndMinute = config.Contracts.NotificationWindowEndHour * 60;
 
             // Server-authoritative, mirroring contract generation, so the host doesn't double-send.
             if (!InstanceFinder.IsServer)
@@ -42,14 +42,14 @@ namespace Lithium.Modules.Customers.Patches
                 return;
 
             int nowMinute = TimeManager.GetMinSumFrom24HourTime(__instance.CurrentTime);
-            uint span = (uint)(WindowEndMinute - WindowStartMinute);
+            uint span = (uint)(windowEndMinute - windowStartMinute);
 
             foreach (Customer customer in Customer.UnlockedCustomers.ToList())
             {
                 if (customer == null || customer.CustomerData == null)
                     continue;
 
-                int slot = WindowStartMinute + (int)((uint)StableHash.Compute(customer.CustomerData.name) % span);
+                int slot = windowStartMinute + (int)((uint)StableHash.Compute(customer.CustomerData.name) % span);
                 if (nowMinute != slot)
                     continue;
 

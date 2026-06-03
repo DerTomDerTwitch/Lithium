@@ -22,6 +22,7 @@
             Configuration = Activator.CreateInstance<TConfiguration>();
             OnBeforeConfigurationLoaded();
             Configuration.LoadConfiguration();
+            Configuration.Validate();
         }
     }
 }

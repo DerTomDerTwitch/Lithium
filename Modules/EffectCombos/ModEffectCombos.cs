@@ -1,4 +1,5 @@
 using Il2CppScheduleOne.Effects;
+using Lithium.Helper;
 using Lithium.Modules.Customers;
 using Lithium.Modules.EffectCombos.BonusPayments;
 using MelonLoader;
@@ -14,6 +15,29 @@ namespace Lithium.Modules.EffectCombos
         public string[] Effects { get; set; } = [];
     }
 
+    // Bonus ranges used ONLY when auto-generating the default combo set. Once generated, the combos are
+    // written to the Combos array and editing those directly is the usual way to tune payouts — these
+    // knobs only shape the first generation (or the next one after Combos is cleared). Min/Max are both
+    // inclusive.
+    public class ComboGenerationRanges
+    {
+        // Chance (0..1) that a generated combo uses 3 effects instead of 2. Three-effect combos are rarer
+        // and pay more. 0.5 = an even split.
+        public float ThreeEffectChance { get; set; } = 0.5f;
+
+        // Per-unit fixed cash bonus rolled for each generated combo.
+        public int TwoEffectFixedBonusMin { get; set; } = 5;
+        public int TwoEffectFixedBonusMax { get; set; } = 15;
+        public int ThreeEffectFixedBonusMin { get; set; } = 15;
+        public int ThreeEffectFixedBonusMax { get; set; } = 30;
+
+        // Percentage-of-payment bonus rolled for each generated combo.
+        public float TwoEffectPercentageBonusMin { get; set; } = 3f;
+        public float TwoEffectPercentageBonusMax { get; set; } = 8f;
+        public float ThreeEffectPercentageBonusMin { get; set; } = 8f;
+        public float ThreeEffectPercentageBonusMax { get; set; } = 15f;
+    }
+
     public class ModEffectCombosConfiguration : ModuleConfiguration
     {
         public override string Name => "EffectCombos";
@@ -22,7 +46,42 @@ namespace Lithium.Modules.EffectCombos
         // How many combos to auto-generate when the config has none. Set to 0 to keep it empty.
         public int AutoGenerateCount { get; set; } = 20;
 
+        // Bonus ranges applied during auto-generation (see ComboGenerationRanges).
+        public ComboGenerationRanges GenerationRanges { get; set; } = new ComboGenerationRanges();
+
         public EffectCombo[] Combos { get; set; } = [];
+
+        public override void Validate()
+        {
+            AutoGenerateCount = ConfigValidator.AtLeast(Name, nameof(AutoGenerateCount), AutoGenerateCount, 0);
+
+            ComboGenerationRanges r = GenerationRanges;
+            r.ThreeEffectChance = ConfigValidator.InRange(Name, "GenerationRanges.ThreeEffectChance", r.ThreeEffectChance, 0f, 1f);
+
+            int twoFixedMin = ConfigValidator.AtLeast(Name, "GenerationRanges.TwoEffectFixedBonusMin", r.TwoEffectFixedBonusMin, 0);
+            int twoFixedMax = ConfigValidator.AtLeast(Name, "GenerationRanges.TwoEffectFixedBonusMax", r.TwoEffectFixedBonusMax, 0);
+            ConfigValidator.EnsureOrdered(Name, "GenerationRanges.TwoEffectFixedBonusMin", "GenerationRanges.TwoEffectFixedBonusMax", ref twoFixedMin, ref twoFixedMax);
+            r.TwoEffectFixedBonusMin = twoFixedMin;
+            r.TwoEffectFixedBonusMax = twoFixedMax;
+
+            int threeFixedMin = ConfigValidator.AtLeast(Name, "GenerationRanges.ThreeEffectFixedBonusMin", r.ThreeEffectFixedBonusMin, 0);
+            int threeFixedMax = ConfigValidator.AtLeast(Name, "GenerationRanges.ThreeEffectFixedBonusMax", r.ThreeEffectFixedBonusMax, 0);
+            ConfigValidator.EnsureOrdered(Name, "GenerationRanges.ThreeEffectFixedBonusMin", "GenerationRanges.ThreeEffectFixedBonusMax", ref threeFixedMin, ref threeFixedMax);
+            r.ThreeEffectFixedBonusMin = threeFixedMin;
+            r.ThreeEffectFixedBonusMax = threeFixedMax;
+
+            float twoPctMin = ConfigValidator.AtLeast(Name, "GenerationRanges.TwoEffectPercentageBonusMin", r.TwoEffectPercentageBonusMin, 0f);
+            float twoPctMax = ConfigValidator.AtLeast(Name, "GenerationRanges.TwoEffectPercentageBonusMax", r.TwoEffectPercentageBonusMax, 0f);
+            ConfigValidator.EnsureOrdered(Name, "GenerationRanges.TwoEffectPercentageBonusMin", "GenerationRanges.TwoEffectPercentageBonusMax", ref twoPctMin, ref twoPctMax);
+            r.TwoEffectPercentageBonusMin = twoPctMin;
+            r.TwoEffectPercentageBonusMax = twoPctMax;
+
+            float threePctMin = ConfigValidator.AtLeast(Name, "GenerationRanges.ThreeEffectPercentageBonusMin", r.ThreeEffectPercentageBonusMin, 0f);
+            float threePctMax = ConfigValidator.AtLeast(Name, "GenerationRanges.ThreeEffectPercentageBonusMax", r.ThreeEffectPercentageBonusMax, 0f);
+            ConfigValidator.EnsureOrdered(Name, "GenerationRanges.ThreeEffectPercentageBonusMin", "GenerationRanges.ThreeEffectPercentageBonusMax", ref threePctMin, ref threePctMax);
+            r.ThreeEffectPercentageBonusMin = threePctMin;
+            r.ThreeEffectPercentageBonusMax = threePctMax;
+        }
     }
 
     public class ModEffectCombos : ModuleBase<ModEffectCombosConfiguration>
@@ -83,6 +142,7 @@ namespace Lithium.Modules.EffectCombos
             }
 
             System.Random rng = new();
+            ComboGenerationRanges ranges = Configuration.GenerationRanges;
             List<EffectCombo> combos = [];
             HashSet<string> usedNames = new(StringComparer.OrdinalIgnoreCase);
             HashSet<string> usedEffectSets = [];
@@ -93,7 +153,7 @@ namespace Lithium.Modules.EffectCombos
             {
                 attempts++;
 
-                bool three = effects.Count >= 3 && rng.Next(2) == 0; // 2 or 3 effects
+                bool three = effects.Count >= 3 && rng.NextDouble() < ranges.ThreeEffectChance; // 2 or 3 effects
                 int effectCount = three ? 3 : 2;
 
                 List<string> chosen = PickDistinct(effects, effectCount, rng);
@@ -109,8 +169,13 @@ namespace Lithium.Modules.EffectCombos
                 {
                     Name = name,
                     Effects = chosen.ToArray(),
-                    FixedBonus = three ? rng.Next(15, 31) : rng.Next(5, 16),
-                    PercentageBonus = three ? rng.Next(8, 16) : rng.Next(3, 9),
+                    // rng.Next upper bound is exclusive, so +1 to make the configured Max inclusive.
+                    FixedBonus = three
+                        ? rng.Next(ranges.ThreeEffectFixedBonusMin, ranges.ThreeEffectFixedBonusMax + 1)
+                        : rng.Next(ranges.TwoEffectFixedBonusMin, ranges.TwoEffectFixedBonusMax + 1),
+                    PercentageBonus = three
+                        ? RollFloat(rng, ranges.ThreeEffectPercentageBonusMin, ranges.ThreeEffectPercentageBonusMax)
+                        : RollFloat(rng, ranges.TwoEffectPercentageBonusMin, ranges.TwoEffectPercentageBonusMax),
                 });
             }
 
@@ -140,6 +205,9 @@ namespace Lithium.Modules.EffectCombos
 
             return [.. names];
         }
+
+        private static float RollFloat(System.Random rng, float min, float max) =>
+            (float)(min + rng.NextDouble() * (max - min));
 
         private static List<string> PickDistinct(List<string> source, int count, System.Random rng)
         {
