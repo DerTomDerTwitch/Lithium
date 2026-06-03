@@ -15,6 +15,7 @@ using Lithium.Modules.MixingStations;
 using Lithium.Modules.PlantGrowth;
 using Lithium.Modules.ProductTooltips;
 using Lithium.Modules.PropertyPrices;
+using Lithium.Modules.Rent;
 using Lithium.Modules.Shops;
 using Lithium.Modules.StackSizes;
 using Lithium.Modules.Storyline;
@@ -52,6 +53,7 @@ namespace Lithium
             new ModEndOfDayFreeze(),
             new ModProductTooltips(),
             new ModBanking()
+            new ModRent()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
@@ -99,7 +101,14 @@ namespace Lithium
         {
             base.OnUpdate();
 
-            // Debug hotkeys are dev-only tools; gate them behind the global Debug flag (Lithium.json).
+            // F8 dumps dead drops / properties for authoring the Rent config — a user-facing tool, so it is
+            // available without the Debug flag (it writes a file and prints its path regardless).
+            if (Input.GetKeyDown(KeyCode.F8))
+            {
+                RentDebug.Dump();
+            }
+
+            // The remaining hotkeys are dev-only tools; gate them behind the global Debug flag (Lithium.json).
             if (!Log.DebugEnabled)
                 return;
 
