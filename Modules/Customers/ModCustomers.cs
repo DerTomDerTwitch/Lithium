@@ -65,6 +65,21 @@ namespace Lithium.Modules.Customers
         // their next scheduled order has elapsed — i.e. they've had time to run low. 0.5 = halfway to
         // their next order. 0 disables the gate (vanilla "buy anytime").
         public float MinIntervalFractionBeforeOffer { get; set; } = 0.5f;
+
+        // How much markup over a product's value a customer tolerates on a direct (in-person) offer before
+        // the success chance starts dropping. The game's stock acceptance curve already lets you charge
+        // ~1.6x of market value with no real penalty; this scales the price the customer *perceives* when
+        // judging the offer, shifting that whole vanilla curve along the price axis WITHOUT changing the
+        // money actually paid. >1 = more forgiving (the no-drawback ceiling moves up: 1.25 ≈ ~2.0x ceiling),
+        // <1 = stricter, 1.0 = vanilla (unchanged). Applied only when the module is enabled.
+        public float PriceToleranceMultiplier { get; set; } = 1.0f;
+
+        // Day-to-day randomness on PriceToleranceMultiplier, as a ± fraction. The tolerance actually used
+        // for a given customer on a given day is PriceToleranceMultiplier * (1 ± a deterministic roll in
+        // this band), so some days a customer haggles harder over an over-priced offer and some days
+        // they're more forgiving — and it varies per customer. The roll is stable within a day for a
+        // customer (the displayed success chance matches the one rolled). 0 = no variation; 0.2 = up to ±20%.
+        public float PriceToleranceJitter { get; set; } = 0f;
     }
 
     public class Contracts
