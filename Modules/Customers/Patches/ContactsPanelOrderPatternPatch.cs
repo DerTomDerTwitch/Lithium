@@ -3,7 +3,9 @@ using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.Levelling;
 using Il2CppScheduleOne.NPCs;
 using Il2CppScheduleOne.UI.Phone.ContactsApp;
+using Lithium.Helper;
 using Lithium.Modules.Customers.Architecture;
+using UnityEngine;
 
 namespace Lithium.Modules.Customers.Patches
 {
@@ -58,6 +60,24 @@ namespace Lithium.Modules.Customers.Patches
                 customer.CustomerData.MaxOrdersPerWeek);
 
             __instance.PropertiesLabel.text += marker + Describe(profile);
+
+            string preferences = DescribePreferences(customer.CustomerData);
+            if (preferences != null)
+                __instance.PropertiesLabel.text += "\nDrug preferences:\n" + preferences;
+        }
+
+        // Per-drug-type affinity, shown as an independent signed percentage (affinity * 100). Positive =
+        // liked, negative = disliked; the values are not a distribution and don't sum to 100%.
+        private static string DescribePreferences(CustomerData data)
+        {
+            if (data.DefaultAffinityData == null || data.DefaultAffinityData.ProductAffinities == null)
+                return null;
+
+            var lines = data.DefaultAffinityData.ProductAffinities.ToList()
+                .Select(a => $"  {a.DrugType}: {Mathf.RoundToInt(a.Affinity * 100f).ToString("+0;-0;0")}%")
+                .ToList();
+
+            return lines.Count > 0 ? string.Join("\n", lines) : null;
         }
 
         private static string Describe(OrderPatternProfile profile)
@@ -65,11 +85,9 @@ namespace Lithium.Modules.Customers.Patches
             string days = string.Join(", ", profile.OrderDays.Select(d => DayAbbr[(int)d]));
             string cadence = profile.Archetype switch
             {
-                OrderPatternArchetype.DailySmall => "daily, small",
-                OrderPatternArchetype.EveryTwoDays => "every couple days",
-                OrderPatternArchetype.Irregular => "irregular",
-                OrderPatternArchetype.BiWeekly => "twice weekly",
-                OrderPatternArchetype.WeeklyBulk => "weekly bulk",
+                OrderPatternArchetype.EveryThreeDays => "every few days",
+                OrderPatternArchetype.TwiceWeekly => "twice weekly",
+                OrderPatternArchetype.Weekly => "weekly bulk",
                 _ => "varies"
             };
             return $"{days} ({cadence})";

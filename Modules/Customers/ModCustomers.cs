@@ -56,6 +56,14 @@ namespace Lithium.Modules.Customers
         // When true, a direct (in-person) offer is rejected outright unless at least one offered
         // product covers a desired effect — same hard requirement contracts use, no fallback.
         public bool RequireEffectMatch { get; set; } = true;
+
+        // Anti-exploit gate (only active for customers reshaped into bulk buyers by order patterns).
+        // A customer placing one big weekly/bi-weekly order would otherwise still accept extra in-person
+        // offers any day, letting the player sell a week's worth daily and defeat the bulk cadence. So a
+        // customer refuses an unscheduled in-person offer until at least this fraction of the wait until
+        // their next scheduled order has elapsed — i.e. they've had time to run low. 0.5 = halfway to
+        // their next order. 0 disables the gate (vanilla "buy anytime").
+        public float MinIntervalFractionBeforeOffer { get; set; } = 0.5f;
     }
 
     public class Contracts
@@ -104,6 +112,10 @@ namespace Lithium.Modules.Customers
         // How the ordered product(s) are chosen — coverage preference and optional second product.
         public ProductSelection ProductSelection { get; set; } = new ProductSelection();
 
+        // A bulk order replaces several normal orders' worth of volume, so it grants scaled affection
+        // and XP on completion to match what those separate orders would have earned.
+        public BulkRewards BulkRewards { get; set; } = new BulkRewards();
+
         // Texts sent when the customer settles for a non-matching product at the reduced price.
         public string[] ReducedSaleTemplates { get; set; } =
         [
@@ -141,16 +153,34 @@ namespace Lithium.Modules.Customers
         public float SecondProductQuantityShare { get; set; } = 0.25f;
     }
 
-    // Relative likelihood of each ordering scheme (any non-negative numbers; they need not sum to 100).
-    // Larger intervals (fewer order days per week) are weighted higher by default, so weekly and
-    // twice-weekly customers are more common than daily ones.
+    // Scales the affection (customer relationship) and XP earned from a completed bulk order by the order's
+    // quantity multiplier — how many normal orders it stands in for (e.g. a weekly order worth ~7 daily
+    // ones). The affection/XP the game actually awards for the handover is measured, then topped up so the
+    // total is multiplier-times that base. So a 7x-volume order grants ~7x the affection and XP, matching
+    // what the separate deliveries it replaced would have earned — no guessed reward constants.
+    public class BulkRewards
+    {
+        public bool Enabled { get; set; } = true;
+
+        // Scale the customer-relationship (affection) gain by the order's quantity multiplier.
+        public bool ScaleRelationship { get; set; } = true;
+
+        // Scale the XP gain by the order's quantity multiplier.
+        public bool ScaleXP { get; set; } = true;
+
+        // Upper bound on the reward multiplier so an unusually large order can't grant a runaway one-shot
+        // bonus. The effective multiplier is min(orderMultiplier, this).
+        public float MaxRewardMultiplier { get; set; } = 7f;
+    }
+
+    // Relative likelihood of each ordering cadence (any non-negative numbers; they need not sum to 100).
+    // No customer ever orders daily. Weekly is the common case; shorter intervals are progressively
+    // rarer, so most customers place fewer, larger (bulk) orders.
     public class OrderPatternWeights
     {
-        public float WeeklyBulk { get; set; } = 35f;    // 1 day / week    — largest interval
-        public float BiWeekly { get; set; } = 28f;      // 2 days / week
-        public float Irregular { get; set; } = 18f;     // 2-4 days / week
-        public float EveryTwoDays { get; set; } = 12f;  // 3-4 days / week
-        public float DailySmall { get; set; } = 7f;     // 6-7 days / week — smallest interval
+        public float Weekly { get; set; } = 55f;          // 1 day / week    — most common
+        public float TwiceWeekly { get; set; } = 30f;     // 2 days / week   — uncommon
+        public float EveryThreeDays { get; set; } = 15f;  // 2-3 days / week — most rare
     }
 
     public class OrderPatterns
@@ -185,7 +215,14 @@ namespace Lithium.Modules.Customers
     {
         public bool Enabled { get; set; } = true;
 
-        // Orders at or below this quantity keep the game's default acceptance window (vanilla feel).
+        // Multiplies the whole acceptance window (base + size bonus) so the player gets more time to
+        // answer every offer. 1.5 = +50%; 1.0 = no global extension. Large (weekly bulk) orders comfortably
+        // span multiple in-game days, and even small orders aren't cut short by a deadline that lands the
+        // same night. Applied in OfferAcceptanceWindow.Extend, then bounded by MaxWindowMinutes.
+        public float DurationMultiplier { get; set; } = 1.5f;
+
+        // Orders at or below this quantity keep the game's default acceptance window, scaled by
+        // DurationMultiplier.
         public int BaseQuantity { get; set; } = 10;
 
         // Extra in-game minutes granted per unit ordered above BaseQuantity, added to the game's default

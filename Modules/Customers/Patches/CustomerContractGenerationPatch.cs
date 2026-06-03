@@ -18,14 +18,15 @@ namespace Lithium.Modules.Customers.Patches
     [HarmonyPatch(typeof(Customer), nameof(Customer.TryGenerateContract))]
     public class CustomerContractGenerationPatch
     {
-        // TryGenerateContract's postfix fires more than once on the SAME ContractInfo within one
-        // generation pass (the game reprocesses the customer's pending contract), which compounded the
-        // bulk multiplier — e.g. 11 -> 66 -> 396. We scale each contract at most once, keyed by native
-        // pointer. The guard set is scoped to the current frame: the duplicate calls happen in the same
-        // synchronous pass, so a per-frame set both catches the repeat and stays small — no unbounded
-        // growth, and no risk of a GC-reused pointer matching a stale entry (entries never outlive a frame).
-        private static readonly HashSet<IntPtr> _scaledThisFrame = new();
-        private static int _scaledFrame = -1;
+        // TryGenerateContract's postfix fires more than once on the SAME ContractInfo (the game reprocesses
+        // the customer's pending contract), which compounded the bulk multiplier — e.g. 11 -> 66 -> 396,
+        // because each re-fire read the already-scaled quantity as its new base. Rather than assume the
+        // re-fires land in the same frame (the old per-frame guard's fragile premise), we remember the exact
+        // contract shape we last wrote for each ContractInfo pointer. On entry we compare the incoming
+        // contract to that fingerprint: an exact match means the game is reprocessing our own output, so we
+        // leave it untouched; a mismatch (or unseen pointer) is a genuine fresh roll — or a GC-reused pointer
+        // now backing a different contract — and is scaled normally. Frame-independent and reuse-safe.
+        private static readonly Dictionary<IntPtr, string> _lastWritten = new();
 
         [HarmonyPostfix]
         public static void Postfix(ref ContractInfo __result, Customer __instance, Dealer dealer)
@@ -82,16 +83,14 @@ namespace Lithium.Modules.Customers.Patches
 
             float qtyMultiplier = pattern?.QuantityMultiplier ?? 1f;
 
-            // Guard against the duplicate generation call re-scaling the same contract (see field note).
-            int frame = Time.frameCount;
-            if (frame != _scaledFrame)
+            // Idempotency guard (see field note): if the contract handed to us is exactly what we last wrote
+            // for this pointer, the game is just reprocessing our own output — leave it as-is rather than
+            // re-scaling it. Captured before any mutation so it reflects the game's fresh roll on a real call.
+            IntPtr contractPtr = __result.Pointer;
+            string incomingFingerprint = Fingerprint(__result);
+            if (_lastWritten.TryGetValue(contractPtr, out string previous) && previous == incomingFingerprint)
             {
-                _scaledThisFrame.Clear();
-                _scaledFrame = frame;
-            }
-            if (!_scaledThisFrame.Add(__result.Pointer))
-            {
-                Log.Info($"[Lithium] Skipped duplicate contract generation for {__instance.CustomerData.name}.");
+                Log.Info($"[Lithium] Skipped reprocessed contract for {__instance.CustomerData.name}.");
                 return;
             }
 
@@ -178,9 +177,37 @@ namespace Lithium.Modules.Customers.Patches
                     string.Join(", ", __result.Products.entries.ToList().Select(e => $"{e.Quantity}x {e.ProductID}")) +
                     $" = ${__result.Payment:F0}");
 
+            // Remember the exact shape we just wrote so the game's reprocess pass recognises it as our own
+            // output (above) instead of re-scaling it.
+            RememberWritten(contractPtr, __result);
+
             // A fresh offer reached the player — the retry obligation (if any) is fulfilled. A later
             // refusal/expiry re-arms it for the following day.
             ContractRetryTracker.Clear(__instance.CustomerData.name);
+        }
+
+        // A stable signature of a contract's payable shape (payment + each ordered product, quantity and
+        // quality). Two invocations producing the same string describe the same order.
+        private static string Fingerprint(ContractInfo info)
+        {
+            if (info == null || info.Products == null)
+                return string.Empty;
+            return $"{info.Payment:F2}|" + string.Join(",", info.Products.entries.ToList()
+                .Select(e => $"{e.ProductID}:{e.Quantity}:{(int)e.Quality}"));
+        }
+
+        private static void RememberWritten(IntPtr contractPtr, ContractInfo info)
+        {
+            if (info == null)
+            {
+                _lastWritten.Remove(contractPtr);
+                return;
+            }
+            // Contracts are transient and few are in flight at once, but never let a long session grow the
+            // map without bound — a periodic flush is harmless since a flushed entry just re-scales once.
+            if (_lastWritten.Count > 512)
+                _lastWritten.Clear();
+            _lastWritten[contractPtr] = Fingerprint(info);
         }
 
         // Pays the customer below the product's DEFAULT market value (not the player's listed price)

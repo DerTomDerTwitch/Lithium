@@ -504,6 +504,7 @@
 		<Compile Include="Modules\Customers\Architecture\ContractRetryTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\OrderPatternProfile.cs" />
 		<Compile Include="Modules\Customers\Architecture\OfferAcceptanceWindow.cs" />
+		<Compile Include="Modules\Customers\Architecture\OfferTimingGate.cs" />
 		<Compile Include="Modules\Customers\Architecture\OfferDeadlineTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\SaveSlotKey.cs" />
 		<Compile Include="Modules\Customers\Behaviours\CustomerNotificationState.cs" />
@@ -516,6 +517,7 @@
 		<Compile Include="Modules\Customers\NpcRosterDebug.cs" />
 		<Compile Include="Modules\Customers\OrderPatternDebug.cs" />
 		<Compile Include="Modules\Customers\ProductCoverageNotifier.cs" />
+		<Compile Include="Modules\Customers\Patches\CustomerBulkRewardPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerContractGenerationPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerContractRejectedPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerExpireOfferPatch.cs" />
@@ -588,6 +590,8 @@
 		<Compile Include="Modules\MixingStations\ModMixingStations.cs" />
 		<Compile Include="Modules\MixingStations\Patches\MixingStationCapacityPatch.cs" />
 		<Compile Include="Modules\MixingStations\Patches\MixingStationSpeedPatch.cs" />
+		<Compile Include="Modules\ProductTooltips\ModProductTooltips.cs" />
+		<Compile Include="Modules\ProductTooltips\Patches\ProductItemInfoContentPatch.cs" />
 	</ItemGroup>
 	
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">

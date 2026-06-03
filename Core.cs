@@ -12,6 +12,7 @@ using Lithium.Modules.EndOfDayFreeze;
 using Lithium.Modules.LabOven;
 using Lithium.Modules.MixingStations;
 using Lithium.Modules.PlantGrowth;
+using Lithium.Modules.ProductTooltips;
 using Lithium.Modules.PropertyPrices;
 using Lithium.Modules.Shops;
 using Lithium.Modules.StackSizes;
@@ -47,7 +48,8 @@ namespace Lithium
             new ModWateringCan(),
             new ModEffectCombos(),
             new ModVehicles(),
-            new ModEndOfDayFreeze()
+            new ModEndOfDayFreeze(),
+            new ModProductTooltips()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
@@ -94,6 +96,11 @@ namespace Lithium
         public override void OnUpdate()
         {
             base.OnUpdate();
+
+            // Debug hotkeys are dev-only tools; gate them behind the global Debug flag (Lithium.json).
+            if (!Log.DebugEnabled)
+                return;
+
             if (Input.GetKeyDown(KeyCode.F5))
             {
                 LandVehicle[] array2 = VehicleManager.Instance.AllVehicles.ToArray()

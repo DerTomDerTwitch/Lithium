@@ -6,11 +6,11 @@ namespace Lithium.Modules.Customers.Architecture
 {
     public enum OrderPatternArchetype
     {
-        DailySmall,
-        EveryTwoDays,
-        Irregular,
-        BiWeekly,
-        WeeklyBulk
+        // Ordered from the most frequent cadence to the least. There is deliberately no daily cadence:
+        // every customer orders at most a few times a week, so they place fewer, larger (bulk) orders.
+        EveryThreeDays,
+        TwiceWeekly,
+        Weekly
     }
 
     /// <summary>
@@ -55,6 +55,38 @@ namespace Lithium.Modules.Customers.Architecture
             return best;
         }
 
+        /// <summary>
+        /// Fraction (0..1) of the customer's current inter-order interval that has elapsed at the given
+        /// continuous week position (<c>(int)day + fractionOfDay</c>, in [0,7)). 0 means they've effectively
+        /// just placed an order (start of the wait for the next one); approaching 1 means their next
+        /// scheduled order is imminent. Used to gate off-schedule in-person offers — a customer that just
+        /// took a bulk order shouldn't keep buying extra product the same day.
+        /// </summary>
+        public float IntervalFractionElapsed(float weekPosition)
+        {
+            // Project every order day across the previous, current and next week so the interval bracketing
+            // weekPosition is found regardless of where the week boundary falls.
+            float prev = float.NegativeInfinity;
+            float next = float.PositiveInfinity;
+            foreach (EDay day in OrderDays)
+            {
+                foreach (float mark in new[] { (int)day - 7, (int)day, (int)day + 7 })
+                {
+                    if (mark <= weekPosition && mark > prev)
+                        prev = mark;
+                    if (mark > weekPosition && mark < next)
+                        next = mark;
+                }
+            }
+
+            float length = next - prev;
+            if (length <= 0f || float.IsInfinity(length))
+                return 1f;
+
+            float fraction = (weekPosition - prev) / length;
+            return fraction < 0f ? 0f : fraction > 1f ? 1f : fraction;
+        }
+
         public static OrderPatternProfile Create(string customerName, int minOrdersPerWeek, int maxOrdersPerWeek)
         {
             int seed = StableHash.Compute(customerName);
@@ -85,11 +117,9 @@ namespace Lithium.Modules.Customers.Architecture
             // session, and Pick() consumes exactly one RNG draw regardless of them, so the two sites stay
             // in sync. Negative weights are clamped to 0.
             WeightedPicker<OrderPatternArchetype> picker = new WeightedPicker<OrderPatternArchetype>(rng);
-            picker.Add(OrderPatternArchetype.WeeklyBulk, Math.Max(0f, weights.WeeklyBulk));
-            picker.Add(OrderPatternArchetype.BiWeekly, Math.Max(0f, weights.BiWeekly));
-            picker.Add(OrderPatternArchetype.Irregular, Math.Max(0f, weights.Irregular));
-            picker.Add(OrderPatternArchetype.EveryTwoDays, Math.Max(0f, weights.EveryTwoDays));
-            picker.Add(OrderPatternArchetype.DailySmall, Math.Max(0f, weights.DailySmall));
+            picker.Add(OrderPatternArchetype.Weekly, Math.Max(0f, weights.Weekly));
+            picker.Add(OrderPatternArchetype.TwiceWeekly, Math.Max(0f, weights.TwiceWeekly));
+            picker.Add(OrderPatternArchetype.EveryThreeDays, Math.Max(0f, weights.EveryThreeDays));
             return picker.Pick();
         }
 
@@ -97,43 +127,29 @@ namespace Lithium.Modules.Customers.Architecture
         {
             switch (archetype)
             {
-                case OrderPatternArchetype.WeeklyBulk:
-                    // One big order day per week, then nothing.
+                case OrderPatternArchetype.Weekly:
+                    // One order day per week — the largest interval and biggest single (bulk) order.
                     return [(EDay)rng.Next(0, 7)];
 
-                case OrderPatternArchetype.BiWeekly:
+                case OrderPatternArchetype.TwiceWeekly:
                 {
-                    // Two well-separated days.
+                    // Two well-separated days, ~3–4 days apart.
                     int d0 = rng.Next(0, 7);
                     int d1 = (d0 + 3 + rng.Next(0, 2)) % 7;
                     return Distinct(d0, d1);
                 }
 
-                case OrderPatternArchetype.EveryTwoDays:
-                {
-                    // Roughly every other day (3–4 days/week).
-                    int start = rng.Next(0, 2);
-                    List<EDay> days = [];
-                    for (int d = start; d < 7; d += 2)
-                        days.Add((EDay)d);
-                    return days;
-                }
-
-                case OrderPatternArchetype.Irregular:
-                {
-                    // 2–4 arbitrary, unevenly spaced fixed days.
-                    int count = 2 + rng.Next(0, 3);
-                    return SampleDistinct(count, rng);
-                }
-
-                case OrderPatternArchetype.DailySmall:
+                case OrderPatternArchetype.EveryThreeDays:
                 default:
                 {
-                    // Most days (6–7), small quantities.
-                    int count = 6 + rng.Next(0, 2);
-                    if (count >= 7)
-                        return [.. Enumerable.Range(0, 7).Select(d => (EDay)d)];
-                    return SampleDistinct(count, rng);
+                    // Roughly every third day within the week: 2–3 evenly spaced days. Starting in
+                    // 0..2 guarantees at least two order days (start 0 → Mon/Thu/Sun, 1 → Tue/Fri,
+                    // 2 → Wed/Sat), so this never collapses into a weekly pattern.
+                    int start = rng.Next(0, 3);
+                    List<EDay> days = [];
+                    for (int d = start; d < 7; d += 3)
+                        days.Add((EDay)d);
+                    return days;
                 }
             }
         }
@@ -143,21 +159,6 @@ namespace Lithium.Modules.Customers.Architecture
             List<int> set = a == b ? [a] : [a, b];
             set.Sort();
             return [.. set.Select(d => (EDay)d)];
-        }
-
-        private static List<EDay> SampleDistinct(int count, Random rng)
-        {
-            // Partial Fisher–Yates over Mon..Sun, then sort for a stable day order.
-            List<int> pool = [.. Enumerable.Range(0, 7)];
-            count = Math.Clamp(count, 1, 7);
-            for (int i = 0; i < count; i++)
-            {
-                int j = i + rng.Next(0, pool.Count - i);
-                (pool[i], pool[j]) = (pool[j], pool[i]);
-            }
-            List<int> chosen = pool.GetRange(0, count);
-            chosen.Sort();
-            return [.. chosen.Select(d => (EDay)d)];
         }
     }
 }
