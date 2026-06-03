@@ -63,21 +63,24 @@ namespace Lithium.Modules.Customers.Patches
 
             string preferences = DescribePreferences(customer.CustomerData);
             if (preferences != null)
-                __instance.PropertiesLabel.text += "\nDrug preferences:\n" + preferences;
+                __instance.PropertiesLabel.text += "\nPrefers: " + preferences;
         }
 
         // Per-drug-type affinity, shown as an independent signed percentage (affinity * 100). Positive =
-        // liked, negative = disliked; the values are not a distribution and don't sum to 100%.
+        // liked, negative = disliked; the values are not a distribution and don't sum to 100%. Kept to a
+        // single compact line: the detail panel body has a bounded height budget (the game itself caps its
+        // most-purchased list for the same reason), and adding one row per drug type pushes the body past
+        // that budget, shoving the name header out of the panel's visible area.
         private static string DescribePreferences(CustomerData data)
         {
             if (data.DefaultAffinityData == null || data.DefaultAffinityData.ProductAffinities == null)
                 return null;
 
-            var lines = data.DefaultAffinityData.ProductAffinities.ToList()
-                .Select(a => $"  {a.DrugType}: {Mathf.RoundToInt(a.Affinity * 100f).ToString("+0;-0;0")}%")
+            var parts = data.DefaultAffinityData.ProductAffinities.ToList()
+                .Select(a => $"{a.DrugType} {Mathf.RoundToInt(a.Affinity * 100f).ToString("+0;-0;0")}%")
                 .ToList();
 
-            return lines.Count > 0 ? string.Join("\n", lines) : null;
+            return parts.Count > 0 ? string.Join(", ", parts) : null;
         }
 
         private static string Describe(OrderPatternProfile profile)
