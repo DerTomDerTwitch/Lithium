@@ -502,6 +502,13 @@
 		<Compile Include="Modules\EndOfDayFreeze\Patches\PlantGrowthFreezePatch.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\Patches\ChemistryStationFreezePatch.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\Patches\MixingStationFreezePatch.cs" />
+		<Compile Include="Modules\Banking\ModBanking.cs" />
+		<Compile Include="Modules\Banking\Patches\AtmDepositLimitPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\AtmRemainingDepositPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\AtmDayPassPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\AtmTransactionPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\LaunderCapacityPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\LaunderSpeedPatch.cs" />
 		<Compile Include="Modules\Customers\Architecture\BonusPaymentHandler.cs" />
 		<Compile Include="Modules\Customers\Architecture\ContractRetryTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\OrderPatternProfile.cs" />
