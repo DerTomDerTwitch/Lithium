@@ -100,11 +100,16 @@ namespace Lithium.Modules.Customers.Architecture
             if (orderDays.Count == 0)
                 orderDays.Add((EDay)(((seed % 7) + 7) % 7));
 
+            // Player-balancing scale on bulk size. Reads config (stable within a session), so every call
+            // site that rebuilds this profile for a given name still agrees on the multiplier. Clamped at
+            // 0 so a negative factor can't invert order sizes.
+            float sizeFactor = Math.Max(0f, Core.Get<ModCustomers>().Configuration.OrderPatterns.BulkOrderSizeFactor);
+
             return new OrderPatternProfile
             {
                 Archetype = archetype,
                 OrderDays = orderDays,
-                QuantityMultiplier = referenceOrdersPerWeek / (float)orderDays.Count
+                QuantityMultiplier = referenceOrdersPerWeek / (float)orderDays.Count * sizeFactor
             };
         }
 

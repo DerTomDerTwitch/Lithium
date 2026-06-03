@@ -187,6 +187,13 @@ namespace Lithium.Modules.Customers
     {
         public bool Enabled { get; set; }
 
+        // Player-balancing scale on the bulk (per-order) size that order patterns produce. 1.0 = full bulk
+        // (a fewer-days pattern conserves the customer's whole weekly volume into each order); 0.5 halves
+        // every bulk order; 0 effectively removes the bulk scaling. Applied to the order-pattern quantity
+        // multiplier at its source, so both the order size AND the matching scaled affection/XP reward move
+        // with it. Only has an effect while order patterns are active (Enabled + XP requirement met).
+        public float BulkOrderSizeFactor { get; set; } = 1.0f;
+
         // Relative likelihood of each ordering scheme (see OrderPatternWeights).
         public OrderPatternWeights ArchetypeWeights { get; set; } = new OrderPatternWeights();
 
