@@ -11,9 +11,6 @@ namespace Lithium.Modules.Employees.Patches
         [HarmonyPrefix]
         private static void NPCSlotPatch(NPCInventory __instance)
         {
-            if (__instance == null)
-                return;
-
             ModEmployees mod = Core.Get<ModEmployees>();
             if (mod == null || !mod.Configuration.Enabled)
                 return;

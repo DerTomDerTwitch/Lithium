@@ -49,7 +49,7 @@ namespace Lithium.Modules.Customers.Patches
             // promise (never earlier), so the guard keeps protecting it.
             int nowMinSum = TimeManager.Instance.GetDateTime().GetMinSum();
 
-            int quantity = contract.Products.entries.ToList().Sum(e => e.Quantity);
+            int quantity = ProductHelper.GetTotalQuantity(contract.Products);
             if (quantity <= 0)
                 return;
 

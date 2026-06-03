@@ -29,7 +29,7 @@ namespace Lithium.Modules.Customers.Patches
                 ProductItemInstance productItemInstance = item.TryCast<ProductItemInstance>();
 
 
-                string[] desires = __instance.CustomerData.PreferredProperties.ToList().Select(p => p.Name).ToArray();
+                string[] desires = ProductHelper.GetDesireNames(__instance.CustomerData).ToArray();
                 string[] productEffects = productDefinition.Properties.ToList().Select(p => p.Name).ToArray();
 
                 sum += SuccessChanceCalculator.CalculateSuccess(

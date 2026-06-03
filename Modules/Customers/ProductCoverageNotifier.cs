@@ -30,10 +30,10 @@ namespace Lithium.Modules.Customers
 
             foreach (Customer c in Customer.UnlockedCustomers.ToList())
             {
-                if (c == null || c.CustomerData == null || c.NPC == null)
+                if (!c.IsServeable())
                     continue;
 
-                List<string> desires = c.CustomerData.PreferredProperties.ToList().Select(p => p.Name).ToList();
+                List<string> desires = ProductHelper.GetDesireNames(c.CustomerData);
                 if (desires.Count == 0)
                     continue;
 
@@ -60,7 +60,7 @@ namespace Lithium.Modules.Customers
             List<string> coverableIds = [];
             foreach (Customer c in Customer.UnlockedCustomers.ToList())
             {
-                if (c == null || c.CustomerData == null || c.NPC == null)
+                if (!c.IsServeable())
                     continue;
                 if (c.CustomerData.PreferredProperties.ToList().Count == 0)
                     continue;

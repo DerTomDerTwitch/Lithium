@@ -30,8 +30,9 @@ namespace Lithium.Modules.Customers.Architecture
 
                 return Sanitize($"{slot} - {organisation}");
             }
-            catch
+            catch (Exception e)
             {
+                Log.Warning($"[Lithium] Failed to resolve save slot key: {e.Message}");
                 return null;
             }
         }

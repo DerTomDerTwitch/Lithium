@@ -43,9 +43,7 @@ namespace Lithium.Modules.Customers.Patches
             if (templates == null || templates.Length == 0)
                 return;
 
-            int quantity = contract.Products != null
-                ? contract.Products.entries.ToList().Sum(e => e.Quantity)
-                : 0;
+            int quantity = ProductHelper.GetTotalQuantity(contract.Products);
 
             // contract.ExpiresAfter isn't populated yet when the offer message is built, so derive the
             // acceptance window from the game's offer-expiry default and apply the same large-order

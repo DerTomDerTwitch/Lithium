@@ -10,11 +10,11 @@ namespace Lithium.Modules.DryingRacks.Patches
         [HarmonyPrefix]
         static bool Prefix(DryingOperation __instance, ref EQuality __result)
         {
-            if (!Core.Get<ModDryingRacks>().Configuration.Enabled)
+            ModDryingRacksConfiguration config = Core.Get<ModDryingRacks>().Configuration;
+            if (!config.Enabled)
                 return true;
 
-
-            Dictionary<string, int> dryTimes = Core.Get<ModDryingRacks>().Configuration.PerQualityDryTimes;
+            Dictionary<string, int> dryTimes = config.PerQualityDryTimes;
             string quality = __instance.StartQuality.ToString();
 
             if (__instance.Time >= dryTimes.GetValueOrDefault(quality, 720))

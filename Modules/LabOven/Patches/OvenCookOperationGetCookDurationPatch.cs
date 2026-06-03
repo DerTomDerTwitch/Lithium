@@ -14,8 +14,7 @@ namespace Lithium.Modules.LabOven.Patches
             if (!config.Enabled)
                 return;
 
-            float speed = Core.Get<ModLabOven>().Configuration.Speed;
-            __result = Mathf.FloorToInt(__result / speed);
+            __result = Mathf.FloorToInt(__result / config.Speed);
         }
     }
 }

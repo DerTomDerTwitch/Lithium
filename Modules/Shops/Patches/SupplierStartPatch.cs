@@ -11,6 +11,36 @@ namespace Lithium.Modules.Shops.Patches
     [HarmonyPatch(typeof(Player), nameof(Player.NetworkInitialize__Late))]
     public class SupplierStartPatch
     {
+        // A by-ref accessor to one of the config's named override fields, so a single loop can both
+        // auto-populate (`??= new()`, which writes the field back) and read each entry — replacing the
+        // 11-case shop switch and the 4× copy-pasted supplier block.
+        private delegate ref T ConfigRef<T>(ModShopsConfiguration configuration);
+
+        // Maps each in-game shop code to its config field.
+        private static readonly Dictionary<string, ConfigRef<ShopListingSettings>> ShopConfigByCode = new()
+        {
+            ["thrifty_threads"] = c => ref c.ThriftyThreads,
+            ["coke_shop"] = c => ref c.CokeSupplier,
+            ["meth_shop"] = c => ref c.MethSupplier,
+            ["weed_shop"] = c => ref c.WeedSupplier,
+            ["shrooms_shop"] = c => ref c.ShroomSupplier,
+            ["boutique"] = c => ref c.Boutique,
+            ["dark_market_shop"] = c => ref c.DarkMarket,
+            ["gas_mart_west"] = c => ref c.GasStation,
+            ["gas_mart_central"] = c => ref c.CentralGasStation,
+            ["dans_hardware"] = c => ref c.DansHardware,
+            ["handy_hanks"] = c => ref c.HandyHanks,
+        };
+
+        // Each online supplier: how to find its live NPC, and its config field.
+        private static readonly (Func<Supplier> Find, ConfigRef<SupplierListingOverride> Config)[] Suppliers =
+        {
+            (() => UnityEngine.Object.FindObjectOfType<Albert>(), c => ref c.Albert),
+            (() => UnityEngine.Object.FindObjectOfType<Shirley>(), c => ref c.Shirley),
+            (() => UnityEngine.Object.FindObjectOfType<Salvador>(), c => ref c.Salvador),
+            (() => UnityEngine.Object.FindObjectOfType<Phil>(), c => ref c.Phil),
+        };
+
         [HarmonyPrefix]
         public static void PatchPrices()
         {
@@ -57,25 +87,13 @@ namespace Lithium.Modules.Shops.Patches
             }
 
             ModShopsConfiguration configuration = Core.Get<ModShops>().Configuration;
-            Albert albert = UnityEngine.Object.FindObjectOfType<Albert>();
-            AssertSupplierConfigEntryExists(ref configuration.Albert, albert);
-            if (configuration.Enabled)
-                ApplySupplierConfigValues(configuration.Albert, albert);
-
-            Shirley shirley = UnityEngine.Object.FindObjectOfType<Shirley>();
-            AssertSupplierConfigEntryExists(ref configuration.Shirley, shirley);
-            if (configuration.Enabled)
-                ApplySupplierConfigValues(configuration.Shirley, shirley);
-
-            Salvador salvador = UnityEngine.Object.FindObjectOfType<Salvador>();
-            AssertSupplierConfigEntryExists(ref configuration.Salvador, salvador);
-            if (configuration.Enabled)
-                ApplySupplierConfigValues(configuration.Salvador, salvador);
-
-            Phil phil = UnityEngine.Object.FindObjectOfType<Phil>();
-            AssertSupplierConfigEntryExists(ref configuration.Phil, phil);
-            if (configuration.Enabled)
-                ApplySupplierConfigValues(configuration.Phil, phil);
+            foreach ((Func<Supplier> find, ConfigRef<SupplierListingOverride> config) in Suppliers)
+            {
+                Supplier supplier = find();
+                AssertSupplierConfigEntryExists(ref config(configuration), supplier);
+                if (configuration.Enabled)
+                    ApplySupplierConfigValues(config(configuration), supplier);
+            }
         }
 
         private static void ApplyShopOverrides()
@@ -89,64 +107,12 @@ namespace Lithium.Modules.Shops.Patches
                 List<ShopListing> listings = shopInterface.Listings.ToList();
                 if (listings == null)
                     continue;
-                switch (shopInterface.ShopCode)
-                {
-                    case "thrifty_threads":
-                        AssertConfigurationEntries(ref configuration.ThriftyThreads, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.ThriftyThreads);
-                        break;
-                    case "coke_shop":
-                        AssertConfigurationEntries(ref configuration.CokeSupplier, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.CokeSupplier);
-                        break;
-                    case "meth_shop":
-                        AssertConfigurationEntries(ref configuration.MethSupplier, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.MethSupplier);
-                        break;
-                    case "weed_shop":
-                        AssertConfigurationEntries(ref configuration.WeedSupplier, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.WeedSupplier);
-                        break;
-                    case "shrooms_shop":
-                        AssertConfigurationEntries(ref configuration.ShroomSupplier, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.ShroomSupplier);
-                        break;
-                    case "boutique":
-                        AssertConfigurationEntries(ref configuration.Boutique, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.Boutique);
-                        break;
-                    case "dark_market_shop":
-                        AssertConfigurationEntries(ref configuration.DarkMarket, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.DarkMarket);
-                        break;
-                    case "gas_mart_west":
-                        AssertConfigurationEntries(ref configuration.GasStation, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.GasStation);
-                        break;
-                    case "gas_mart_central":
-                        AssertConfigurationEntries(ref configuration.CentralGasStation, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.CentralGasStation);
-                        break;
-                    case "dans_hardware":
-                        AssertConfigurationEntries(ref configuration.DansHardware, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.DansHardware);
-                        break;
-                    case "handy_hanks":
-                        AssertConfigurationEntries(ref configuration.HandyHanks, shopInterface, listings);
-                        if (configuration.Enabled)
-                            ApplyShopSettings(listings, shopInterface, configuration.HandyHanks);
-                        break;
-                }
+                if (!ShopConfigByCode.TryGetValue(shopInterface.ShopCode, out ConfigRef<ShopListingSettings> config))
+                    continue;
+
+                AssertConfigurationEntries(ref config(configuration), shopInterface, listings);
+                if (configuration.Enabled)
+                    ApplyShopSettings(listings, shopInterface, config(configuration));
             }
         }
 

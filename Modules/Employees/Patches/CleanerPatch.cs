@@ -9,14 +9,9 @@ namespace Lithium.Modules.Employees.Patches
         [HarmonyPostfix]
         static void Postfix(Cleaner __instance)
         {
-            ModEmployees mod = Core.Get<ModEmployees>();
-            if (mod == null || !mod.Configuration.Enabled)
+            if (!ModEmployees.TryBeginConfigure(__instance, out ModEmployeesConfiguration config))
                 return;
 
-            if (!ModEmployees.ConfiguredEmployees.Add(__instance))
-                return;
-
-            ModEmployeesConfiguration config = mod.Configuration;
             __instance.configuration.Bins.MaxItems = config.Cleaners.MaxBins;
             __instance.Movement.WalkSpeed = config.Cleaners.WalkSpeed;
             __instance.DailyWage = config.Cleaners.DailyWage;

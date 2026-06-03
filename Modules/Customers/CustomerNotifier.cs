@@ -16,75 +16,50 @@ namespace Lithium.Modules.Customers
         public static void NotifyPlayerProductsNotSuitable(Customer customer)
         {
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-            if (!config.Contracts.SendNotification)
-                return;
-            if (!ReadyToNotify(customer))
-                return;
-
-            string msg = config.Contracts.MessageTemplates
-                .OrderBy(x => UnityEngine.Random.value)
-                .FirstOrDefault()
-                .Replace("##DESIRES##", ProductHelper.FormatDesires(customer.CustomerData));
-
-            Send(customer, msg);
+            Notify(customer, config, config.Contracts.SendNotification, config.Contracts.MessageTemplates, isDealer: false);
         }
 
         public static void NotifyDealerNotSuitable(Customer customer)
         {
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-            if (!config.Contracts.SendNotificationForDealers)
-                return;
-            if (!ReadyToNotify(customer))
-                return;
-
-            string msg = config.Contracts.DealerTemplates
-                .OrderBy(x => UnityEngine.Random.value)
-                .FirstOrDefault()
-                .Replace("##DEALER##", customer.AssignedDealer.FirstName)
-                .Replace("##DESIRES##", ProductHelper.FormatDesires(customer.CustomerData));
-
-            Send(customer, msg);
+            Notify(customer, config, config.Contracts.SendNotificationForDealers, config.Contracts.DealerTemplates, isDealer: true);
         }
 
         public static void NotifyPlayerReducedDeal(Customer customer)
         {
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-            if (!config.Contracts.SendNotification)
-                return;
-            if (!ReadyToNotify(customer))
-                return;
-
-            string msg = config.Contracts.ReducedSaleTemplates
-                .OrderBy(x => UnityEngine.Random.value)
-                .FirstOrDefault()
-                .Replace("##DESIRES##", ProductHelper.FormatDesires(customer.CustomerData));
-
-            Send(customer, msg);
+            Notify(customer, config, config.Contracts.SendNotification, config.Contracts.ReducedSaleTemplates, isDealer: false);
         }
 
         public static void NotifyDealerReducedDeal(Customer customer)
         {
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-            if (!config.Contracts.SendNotificationForDealers)
+            Notify(customer, config, config.Contracts.SendNotificationForDealers, config.Contracts.ReducedDealerTemplates, isDealer: true);
+        }
+
+        // Shared flow for all four notifications: bail if the relevant SendNotification flag is off or the
+        // per-customer cooldown hasn't elapsed, then pick a random template, fill its placeholders and send.
+        // Dealer templates additionally support the ##DEALER## placeholder (the assigned dealer's name).
+        private static void Notify(Customer customer, ModCustomersConfiguration config, bool gateFlag,
+            string[] templates, bool isDealer)
+        {
+            if (!gateFlag)
                 return;
-            if (!ReadyToNotify(customer))
+            if (!ReadyToNotify(customer, config))
                 return;
 
-            string msg = config.Contracts.ReducedDealerTemplates
-                .OrderBy(x => UnityEngine.Random.value)
-                .FirstOrDefault()
-                .Replace("##DEALER##", customer.AssignedDealer.FirstName)
+            string msg = templates.PickRandom()
                 .Replace("##DESIRES##", ProductHelper.FormatDesires(customer.CustomerData));
+            if (isDealer)
+                msg = msg.Replace("##DEALER##", customer.AssignedDealer.FirstName);
 
             Send(customer, msg);
         }
 
         // Returns true (and stamps the time) only if the cooldown has elapsed since this customer was
         // last notified, so a customer texts at most once per cooldown window.
-        private static bool ReadyToNotify(Customer customer)
+        private static bool ReadyToNotify(Customer customer, ModCustomersConfiguration config)
         {
-            ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-
             if (customer.TryGetComponent(out CustomerNotificationState state))
             {
                 if (TimeManager.Instance.Playtime - state.LastNotification < 60 * config.Contracts.NotificationCooldownInMinutes)

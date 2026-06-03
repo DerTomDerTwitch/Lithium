@@ -18,7 +18,6 @@ namespace Lithium.Modules.Vehicles
     {
         public override string Name => "Vehicles";
 
-        private string[] supportedVehicleCodes = ["shitbox", "bruiser", "hounddog", "dinkler", "cheetah", "veeper", "hotbox"];
         public Dictionary<string, VehicleConfiguration> Overrides = new() {
             { "shitbox", new() },
             { "bruiser", new() },

@@ -8,19 +8,14 @@ namespace Lithium.Modules.Employees.Patches
     // IndividualHarvestTime). Apply on NetworkInitialize__Late like the other employee patches so the
     // configuration object is fully initialized.
     [HarmonyPatch(typeof(Botanist), nameof(Botanist.NetworkInitialize__Late))]
-    public class BotanistValuesPatch
+    public class BotanistPatch
     {
         [HarmonyPostfix]
         static void Postfix(Botanist __instance)
         {
-            ModEmployees mod = Core.Get<ModEmployees>();
-            if (mod == null || !mod.Configuration.Enabled)
+            if (!ModEmployees.TryBeginConfigure(__instance, out ModEmployeesConfiguration config))
                 return;
 
-            if (!ModEmployees.ConfiguredEmployees.Add(__instance))
-                return;
-
-            ModEmployeesConfiguration config = mod.Configuration;
             // The assignable-pot cap lives on the Botanist itself; BotanistConfiguration has no
             // station-list field (unlike Chemist/Packager), so MaxAssignedPots is all we set here.
             __instance.MaxAssignedPots = config.Botanists.MaxAssignedPots;

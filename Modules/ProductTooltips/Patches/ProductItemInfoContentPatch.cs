@@ -6,6 +6,7 @@ using Il2CppScheduleOne.Product;
 using Il2CppScheduleOne.StationFramework;
 using Il2CppScheduleOne.UI.Items;
 using Il2CppTMPro;
+using Lithium.Helper;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -270,6 +271,15 @@ namespace Lithium.Modules.ProductTooltips.Patches
                 }
             }
 
+            // Only reveal recipes whose RESULT the player has already discovered, so the tooltip never
+            // spoils a product they haven't made yet (matching this module's documented behaviour).
+            HashSet<string> discoveredIds = new();
+            foreach (ProductDefinition discovered in ProductManager.DiscoveredProducts.ToList())
+            {
+                if (discovered != null)
+                    discoveredIds.Add(discovered.ID);
+            }
+
             var recipes = manager.mixRecipes;
             for (int r = 0; r < recipes.Count; r++)
             {
@@ -297,6 +307,8 @@ namespace Lithium.Modules.ProductTooltips.Patches
 
                 ItemDefinition output = recipe.Product.Item;
                 if (output.ID == product.ID)
+                    continue;
+                if (!discoveredIds.Contains(output.ID))
                     continue;
 
                 rows.Add(new MixRow(mixerItem.Icon, output.Icon, output.Name));

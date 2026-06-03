@@ -66,10 +66,7 @@ namespace Lithium.Modules.Customers.Patches
                 }
             }
 
-            List<string> desires = __instance.CustomerData.PreferredProperties
-                .ToList()
-                .Select(p => p.Name)
-                .ToList();
+            List<string> desires = ProductHelper.GetDesireNames(__instance.CustomerData);
 
             ProductList.Entry orderedProduct = __result.Products.entries.ToList()[0];
             EQuality quality = orderedProduct.Quality;
@@ -96,7 +93,7 @@ namespace Lithium.Modules.Customers.Patches
 
             if (pattern != null && Log.DebugEnabled)
                 Log.Info($"[Lithium] OrderGen {__instance.CustomerData.name}: " +
-                    $"gameBase={__result.Products.entries.ToList().Sum(e => e.Quantity)}, " +
+                    $"gameBase={ProductHelper.GetTotalQuantity(__result.Products)}, " +
                     $"ordersPerWeek={__instance.CustomerData.MinOrdersPerWeek}-{__instance.CustomerData.MaxOrdersPerWeek}, " +
                     $"archetype={pattern.Archetype}, days={pattern.OrderDays.Count}, mult={qtyMultiplier:F2}");
 
@@ -216,7 +213,7 @@ namespace Lithium.Modules.Customers.Patches
         private static void ApplyReducedPayment(ContractInfo __result, ProductDefinition product)
         {
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-            int qty = __result.Products.entries.ToList().Sum(e => e.Quantity);
+            int qty = ProductHelper.GetTotalQuantity(__result.Products);
             __result.Payment = product.MarketValue * qty * config.Contracts.ReducedDealPriceMultiplier;
         }
 
@@ -237,21 +234,12 @@ namespace Lithium.Modules.Customers.Patches
             ProductSelection selection = Core.Get<ModCustomers>().Configuration.Contracts.ProductSelection;
 
             // Baseline from the game's roll (its per-unit price already bakes in quality and markup).
-            int desiredQuantity = __result.Products.entries.ToList().Sum(e => e.Quantity);
+            int desiredQuantity = ProductHelper.GetTotalQuantity(__result.Products);
             float originalPayment = __result.Payment;
             int scaled = Mathf.Max(1, Mathf.RoundToInt(desiredQuantity * quantityMultiplier));
 
             ProductDefinition primary = PickWeightedByCoverage(matching, desires, selection.CoverageBiasExponent);
-
-            // Maybe pick a second, different product — also weighted toward coverage.
-            ProductDefinition secondary = null;
-            if (selection.EnableSecondProduct && matching.Count > 1 &&
-                UnityEngine.Random.value < selection.SecondProductChance)
-            {
-                List<ProductDefinition> others = matching.Where(p => p.ID != primary.ID).ToList();
-                if (others.Count > 0)
-                    secondary = PickWeightedByCoverage(others, desires, selection.CoverageBiasExponent);
-            }
+            ProductDefinition secondary = PickSecondaryProduct(matching, primary, desires, selection);
 
             int primaryCap = Mathf.Max(1, availableOf(primary));
             int primaryQty;
@@ -284,6 +272,31 @@ namespace Lithium.Modules.Customers.Patches
                 list.entries.Add(new() { ProductID = secondary.ID, Quality = quality, Quantity = secondaryQty });
             __result.Products = list;
 
+            ApplyPricing(__result, primary, primaryQty, secondary, secondaryQty, useListedPrice,
+                originalPayment, desiredQuantity);
+        }
+
+        // Maybe pick a second, different product — also weighted toward coverage. Returns null when the
+        // second-product roll fails, there's no other candidate, or the feature is disabled.
+        private static ProductDefinition PickSecondaryProduct(List<ProductDefinition> matching,
+            ProductDefinition primary, List<string> desires, ProductSelection selection)
+        {
+            if (!selection.EnableSecondProduct || matching.Count <= 1 ||
+                UnityEngine.Random.value >= selection.SecondProductChance)
+                return null;
+
+            List<ProductDefinition> others = matching.Where(p => p.ID != primary.ID).ToList();
+            return others.Count > 0
+                ? PickWeightedByCoverage(others, desires, selection.CoverageBiasExponent)
+                : null;
+        }
+
+        // Prices the composed order: the player's set price per product when useListedPrice is on,
+        // otherwise the game's roll scaled proportionally to the (bulk-scaled / stock-capped) total.
+        private static void ApplyPricing(ContractInfo __result, ProductDefinition primary, int primaryQty,
+            ProductDefinition secondary, int secondaryQty, bool useListedPrice, float originalPayment,
+            int desiredQuantity)
+        {
             int total = primaryQty + secondaryQty;
 
             ProductManager manager = useListedPrice ? NetworkSingleton<ProductManager>.Instance : null;
@@ -297,7 +310,6 @@ namespace Lithium.Modules.Customers.Patches
             }
             else if (desiredQuantity > 0 && total != desiredQuantity)
             {
-                // Scale the game's roll proportionally to the (possibly bulk-scaled / stock-capped) total.
                 __result.Payment = originalPayment / desiredQuantity * total;
             }
         }
@@ -335,7 +347,7 @@ namespace Lithium.Modules.Customers.Patches
 
         private static void RewireOrderedProduct(ContractInfo __result, string id, EQuality quality, int maxAvailableQuantity, float quantityMultiplier = 1f)
         {
-            int desiredQuantity = __result.Products.entries.ToList().Sum(e => e.Quantity);
+            int desiredQuantity = ProductHelper.GetTotalQuantity(__result.Products);
             int scaledQuantity = Mathf.Max(1, Mathf.RoundToInt(desiredQuantity * quantityMultiplier));
             int finalQuantity = Mathf.Min(maxAvailableQuantity, scaledQuantity);
 

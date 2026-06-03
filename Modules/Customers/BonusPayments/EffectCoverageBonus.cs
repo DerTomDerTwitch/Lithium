@@ -11,7 +11,7 @@ namespace Lithium.Modules.Customers.BonusPayments
 {
     public class EffectCoverageBonus : IBonusPaymentHandler
     {
-        public bool BonusPaymentHandler(Customer customer, Contract contract, List<ItemInstance> items, out List<Contract.BonusPayment> boni)
+        public bool TryCalculateBonus(Customer customer, Contract contract, List<ItemInstance> items, out List<Contract.BonusPayment> boni)
         {
             boni = [];
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
@@ -22,7 +22,7 @@ namespace Lithium.Modules.Customers.BonusPayments
             if (!config.EffectBonus.AffectsDealers && contract.Dealer != null)
                 return false;
 
-            List<string> desires = customer.CustomerData.PreferredProperties.ToList().Select(p => p.Name.ToLowerInvariant()).ToList();
+            List<string> desires = ProductHelper.GetDesireNames(customer.CustomerData, toLower: true);
             if (desires.Count == 0 || items == null || items.Count == 0)
                 return false;
 

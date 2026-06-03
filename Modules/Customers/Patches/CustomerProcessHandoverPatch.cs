@@ -46,7 +46,7 @@ namespace Lithium.Modules.Customers.Patches
             float effectBonus = 0f;
             foreach (IBonusPaymentHandler handler in modCustomers.BonusPaymentHandlers)
             {
-                if (handler.BonusPaymentHandler(__instance, contract, itemInstances, out List<Contract.BonusPayment> bonus))
+                if (handler.TryCalculateBonus(__instance, contract, itemInstances, out List<Contract.BonusPayment> bonus))
                 {
                     float sum = bonus.Sum(b => b.Amount);
                     if (sum > 0f)

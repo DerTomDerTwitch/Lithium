@@ -95,7 +95,7 @@ namespace Lithium.Modules.Customers
 
                 string dealer = customer.AssignedDealer != null ? customer.AssignedDealer.FirstName : "<none>";
                 List<string> desireNames = data.PreferredProperties != null
-                    ? data.PreferredProperties.ToList().Select(p => p.Name).ToList()
+                    ? ProductHelper.GetDesireNames(data)
                     : [];
                 int desireCount = desireNames.Count;
                 string desires = desireCount > 0 ? string.Join(", ", desireNames) : "<none>";

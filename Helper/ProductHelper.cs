@@ -40,6 +40,26 @@ namespace Lithium.Helper
             return products.SelectMany(p => p.Properties.ToList()).Select(p => p.Name).Distinct().ToList();
         }
 
+        // A customer we can reason about: present, with customer data and a backing NPC. Replaces the
+        // repeated `c != null && c.CustomerData != null && c.NPC != null` guard in the coverage notifiers.
+        public static bool IsServeable(this Customer customer) =>
+            customer != null && customer.CustomerData != null && customer.NPC != null;
+
+        // The customer's desired-effect names. Pass toLower: true when comparing against already
+        // lower-cased effect names (e.g. EffectCoverageBonus). Replaces the repeated
+        // PreferredProperties.ToList().Select(p => p.Name).ToList() chain across the module.
+        public static List<string> GetDesireNames(CustomerData customerData, bool toLower = false)
+        {
+            IEnumerable<string> names = customerData.PreferredProperties.ToList().Select(p => p.Name);
+            if (toLower)
+                names = names.Select(n => n.ToLowerInvariant());
+            return names.ToList();
+        }
+
+        // Total units across a contract's product list, via the game's own ProductList.GetTotalQuantity().
+        // Null-safe (returns 0), replacing the repeated `Products.entries.ToList().Sum(e => e.Quantity)`.
+        public static int GetTotalQuantity(ProductList products) => products?.GetTotalQuantity() ?? 0;
+
         public static bool ProductMatchesDesires(ProductDefinition pd, List<string> desires) => pd.Properties.ToList().Select(p => p.Name).Intersect(desires).Any();
 
         // How many of the customer's desired effects this product carries (0 = covers none).

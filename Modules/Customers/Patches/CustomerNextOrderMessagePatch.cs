@@ -5,6 +5,7 @@ using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.Levelling;
 using Il2CppScheduleOne.Messaging;
 using Il2CppScheduleOne.Quests;
+using Lithium.Helper;
 using Lithium.Modules.Customers.Architecture;
 using UnityEngine;
 
@@ -71,9 +72,7 @@ namespace Lithium.Modules.Customers.Patches
             EDay today = TimeManager.Instance.CurrentDay;
             string dayPhrase = DayPhrase((int)today, profile.DaysUntilNextOrder(today));
 
-            string template = config.OrderPatterns.NextOrderTemplates
-                .OrderBy(x => UnityEngine.Random.value)
-                .FirstOrDefault();
+            string template = config.OrderPatterns.NextOrderTemplates.PickRandom();
             if (string.IsNullOrEmpty(template))
                 return;
 

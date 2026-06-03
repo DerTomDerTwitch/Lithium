@@ -331,6 +331,8 @@ namespace Lithium.Modules.Customers
             // Same for offer deadlines: the new save's persisted deadlines are reloaded lazily, so an offer
             // still pending across a save/reload keeps the extended acceptance window it was promised.
             OfferDeadlineTracker.Unload();
+            // Drop cached order-pattern profiles so they rebuild for the freshly loaded save's customers.
+            OrderPatternProfile.ClearCache();
 
             if (!Configuration.Enabled)
                 return;

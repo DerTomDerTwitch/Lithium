@@ -9,14 +9,9 @@ namespace Lithium.Modules.Employees.Patches
         [HarmonyPostfix]
         static void Postfix(Packager __instance)
         {
-            ModEmployees mod = Core.Get<ModEmployees>();
-            if (mod == null || !mod.Configuration.Enabled)
+            if (!ModEmployees.TryBeginConfigure(__instance, out ModEmployeesConfiguration config))
                 return;
 
-            if (!ModEmployees.ConfiguredEmployees.Add(__instance))
-                return;
-
-            ModEmployeesConfiguration config = mod.Configuration;
             __instance.configuration.Stations.MaxItems = config.Packagers.MaxStations;
             __instance.configuration.Routes.MaxRoutes = config.Packagers.MaxRoutes;
             __instance.Movement.WalkSpeed = config.Packagers.WalkSpeed;

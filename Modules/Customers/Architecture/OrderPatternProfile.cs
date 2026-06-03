@@ -87,8 +87,20 @@ namespace Lithium.Modules.Customers.Architecture
             return fraction < 0f ? 0f : fraction > 1f ? 1f : fraction;
         }
 
+        // A customer's profile is deterministic within a session (it depends only on the name plus config
+        // that's loaded once at startup), yet several patches rebuild it per customer action. Cache by name
+        // so the work happens once and every call site sees the identical instance. Cleared on save unload
+        // via ModCustomers, since the cache spans the process while the patches' inputs are per-save.
+        private static readonly Dictionary<string, OrderPatternProfile> _cache = new();
+
+        public static void ClearCache() => _cache.Clear();
+
         public static OrderPatternProfile Create(string customerName, int minOrdersPerWeek, int maxOrdersPerWeek)
         {
+            string cacheKey = customerName ?? string.Empty;
+            if (_cache.TryGetValue(cacheKey, out OrderPatternProfile cached))
+                return cached;
+
             int seed = StableHash.Compute(customerName);
             Random rng = new Random(seed);
 
@@ -105,12 +117,14 @@ namespace Lithium.Modules.Customers.Architecture
             // 0 so a negative factor can't invert order sizes.
             float sizeFactor = Math.Max(0f, Core.Get<ModCustomers>().Configuration.OrderPatterns.BulkOrderSizeFactor);
 
-            return new OrderPatternProfile
+            OrderPatternProfile profile = new OrderPatternProfile
             {
                 Archetype = archetype,
                 OrderDays = orderDays,
                 QuantityMultiplier = referenceOrdersPerWeek / (float)orderDays.Count * sizeFactor
             };
+            _cache[cacheKey] = profile;
+            return profile;
         }
 
         private static OrderPatternArchetype PickArchetype(Random rng)

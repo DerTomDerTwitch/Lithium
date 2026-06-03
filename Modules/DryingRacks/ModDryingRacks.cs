@@ -1,4 +1,5 @@
 ﻿using Il2CppScheduleOne.ItemFramework;
+using Lithium.Helper;
 
 namespace Lithium.Modules.DryingRacks
 {
@@ -16,6 +17,13 @@ namespace Lithium.Modules.DryingRacks
             { nameof(EQuality.Premium), 800 },
             { nameof(EQuality.Heavenly), 1200 },
         };
+
+        public override void Validate()
+        {
+            Capacity = ConfigValidator.AtLeast(Name, nameof(Capacity), Capacity, 1);
+            foreach (string tier in PerQualityDryTimes.Keys.ToList())
+                PerQualityDryTimes[tier] = ConfigValidator.AtLeast(Name, $"{nameof(PerQualityDryTimes)}[{tier}]", PerQualityDryTimes[tier], 0);
+        }
     }
 
     public class ModDryingRacks : ModuleBase<ModDryingRacksConfiguration>

@@ -9,7 +9,7 @@ namespace Lithium.Modules.EffectCombos.BonusPayments
 {
     public class EffectComboBonus : IBonusPaymentHandler
     {
-        public bool BonusPaymentHandler(Customer customer, Contract contract, List<ItemInstance> items, out List<Contract.BonusPayment> boni)
+        public bool TryCalculateBonus(Customer customer, Contract contract, List<ItemInstance> items, out List<Contract.BonusPayment> boni)
         {
             boni = [];
             ModEffectCombosConfiguration configuration = Core.Get<ModEffectCombos>().Configuration;

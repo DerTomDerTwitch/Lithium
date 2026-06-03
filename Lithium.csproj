@@ -493,6 +493,7 @@
 		<Compile Include="Helper\ProductHelper.cs" />
 		<Compile Include="Helper\StableHash.cs" />
 		<Compile Include="Helper\StringExtensions.cs" />
+		<Compile Include="Helper\RandomExtensions.cs" />
 		<Compile Include="Modules\ChemistryStation\ModChemistryStation.cs" />
 		<Compile Include="Modules\ChemistryStation\Patches\ChemistryCookOperationProgressPatch.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\ModEndOfDayFreeze.cs" />
@@ -508,6 +509,7 @@
 		<Compile Include="Modules\Customers\Architecture\OfferTimingGate.cs" />
 		<Compile Include="Modules\Customers\Architecture\OfferDeadlineTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\SaveSlotKey.cs" />
+		<Compile Include="Modules\Customers\Architecture\SaveSlotStore.cs" />
 		<Compile Include="Modules\Customers\Behaviours\CustomerNotificationState.cs" />
 		<Compile Include="Modules\Customers\BonusPayments\EffectCoverageBonus.cs" />
 		<Compile Include="Modules\Customers\CustomerNotifier.cs" />
@@ -523,6 +525,7 @@
 		<Compile Include="Modules\Customers\Patches\CustomerContractRejectedPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerExpireOfferPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerExpireOfferGuardPatch.cs" />
+		<Compile Include="Modules\Customers\Patches\CustomerSleepOfferGuardPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\ContactsPanelOrderPatternPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerNextOrderMessagePatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerOfferDeadlinePatch.cs" />
@@ -565,13 +568,14 @@
 		<Compile Include="Modules\PlantGrowth\Behaviours\PlantBaseQuality.cs" />
 		<Compile Include="Modules\PlantGrowth\ModPlants.cs" />
 		<Compile Include="Modules\DryingRacks\ModDryingRacks.cs" />
-		<Compile Include="Modules\PlantGrowth\Patches\BotanistPatch.cs" />
+		<Compile Include="Modules\PlantGrowth\Patches\HarvestPotBehaviourYieldPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\PlantGrowthDonePatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\PlantHarvestablePatch.cs" />
 		<Compile Include="Modules\PlantGrowth\HarvestQuality.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\PlantGetHarvestedProductPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Behaviours\PlantModified.cs" />
-		<Compile Include="Modules\PlantGrowth\Patches\PotPatch.cs" />
+		<Compile Include="Modules\PlantGrowth\Patches\PotStartPatch.cs" />
+		<Compile Include="Modules\PlantGrowth\Patches\PotMinPassPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Behaviours\PotBaseValues.cs" />
 		<Compile Include="Modules\PropertyPrices\ModPropertyPrices.cs" />
 		<Compile Include="Modules\ModuleBase.cs" />

@@ -27,15 +27,8 @@ namespace Lithium.Modules.PlantGrowth.Patches
             if (__instance.GetComponent<PlantModified>() != null) 
                 return;
 
-            PlantModified pm = __instance.gameObject.AddComponent<PlantModified>();
-            pm.OriginalYieldLevel = __instance.YieldMultiplier;
-            Plant plant = __instance.GetComponentInParent<Plant>();
-            if(plant == null)
-                plant = __instance.GetComponent<Plant>();
-            if (plant != null)
-            {
-                pm.QualityLevel = plant.QualityLevel;
-            }
+            // Marker component: its presence (checked above) stops GrowthDone re-rolling the yield.
+            __instance.gameObject.AddComponent<PlantModified>();
 
             __instance.YieldMultiplier *= configuration.RandomYieldModifierPicker.Evaluate(UnityEngine.Random.value);
         }

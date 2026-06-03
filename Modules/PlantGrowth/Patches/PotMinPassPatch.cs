@@ -5,18 +5,6 @@ using UnityEngine;
 
 namespace Lithium.Modules.PlantGrowth.Patches
 {
-    [HarmonyPatch(typeof(Pot), nameof(Pot.Start))]
-    public class PotStartPatch
-    {
-        [HarmonyPostfix]
-        public static void Postfix(Pot __instance)
-        {
-            if (!Core.Get<ModPlants>().Configuration.Enabled)
-                return;
-            __instance.gameObject.AddComponent<PotBaseValues>().Init(__instance);
-        }
-    }
-
     [HarmonyPatch(typeof(Pot), nameof(Pot.OnMinPass))]
     public class PotMinPassPatch
     {

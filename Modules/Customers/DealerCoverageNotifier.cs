@@ -19,7 +19,7 @@ namespace Lithium.Modules.Customers
                 return;
 
             List<Customer> customers = dealer.AssignedCustomers.ToList()
-                .Where(c => c != null && c.CustomerData != null && c.NPC != null)
+                .Where(c => c.IsServeable())
                 .ToList();
             if (customers.Count == 0)
                 return;
@@ -33,7 +33,7 @@ namespace Lithium.Modules.Customers
 
             foreach (Customer c in customers)
             {
-                List<string> desires = c.CustomerData.PreferredProperties.ToList().Select(p => p.Name).ToList();
+                List<string> desires = ProductHelper.GetDesireNames(c.CustomerData);
                 List<string> missing = desires.Except(stocked).ToList();
 
                 if (desires.Count == 0 || missing.Count < desires.Count)
@@ -93,7 +93,7 @@ namespace Lithium.Modules.Customers
         {
             List<ProductDefinition> listed = ProductManager.ListedProducts.ToList();
             List<Customer> customers = Customer.UnlockedCustomers.ToList()
-                .Where(c => c != null && c.CustomerData != null && c.NPC != null && c.AssignedDealer == null)
+                .Where(c => c.IsServeable() && c.AssignedDealer == null)
                 .ToList();
 
             HashSet<string> coveredIds = [];
@@ -101,7 +101,7 @@ namespace Lithium.Modules.Customers
 
             foreach (Customer c in customers)
             {
-                List<string> desires = c.CustomerData.PreferredProperties.ToList().Select(p => p.Name).ToList();
+                List<string> desires = ProductHelper.GetDesireNames(c.CustomerData);
 
                 if (desires.Count == 0 || listed.Any(p => ProductHelper.ProductMatchesDesires(p, desires)))
                     coveredIds.Add(c.NPC.ID);
