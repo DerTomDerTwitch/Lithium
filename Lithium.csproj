@@ -494,6 +494,8 @@
 		<Compile Include="Helper\StableHash.cs" />
 		<Compile Include="Helper\StringExtensions.cs" />
 		<Compile Include="Helper\RandomExtensions.cs" />
+		<Compile Include="Modules\BrickPress\ModBrickPress.cs" />
+		<Compile Include="Modules\BrickPress\Patches\BrickPressBeginButtonPatch.cs" />
 		<Compile Include="Modules\ChemistryStation\ModChemistryStation.cs" />
 		<Compile Include="Modules\ChemistryStation\Patches\ChemistryCookOperationProgressPatch.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\ModEndOfDayFreeze.cs" />

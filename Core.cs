@@ -4,6 +4,7 @@ using Il2CppScheduleOne.Vehicles;
 using Lithium.Helper;
 using Lithium.Modules;
 using Lithium.Modules.Banking;
+using Lithium.Modules.BrickPress;
 using Lithium.Modules.ChemistryStation;
 using Lithium.Modules.Customers;
 using Lithium.Modules.DryingRacks;
@@ -53,7 +54,8 @@ namespace Lithium
             new ModEndOfDayFreeze(),
             new ModProductTooltips(),
             new ModBanking(),
-            new ModRent()
+            new ModRent(),
+            new ModBrickPress()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
@@ -78,7 +80,11 @@ namespace Lithium
         }
 
         private bool _isFirstStart = true;
-        
+
+        // True while a save (the "Main" scene) is loaded. A config reload only re-runs Apply() when this
+        // is set, because Apply() touches live game objects/singletons that don't exist at the menu.
+        private bool _sceneIsMain;
+
         public override void OnSceneWasInitialized(int buildIndex, string sceneName)
         {
             if (sceneName == "Main")
@@ -88,24 +94,77 @@ namespace Lithium
                     Log.Info($"Loading {module.GetType().Name}");
                     module.Apply();
                 }
-                
+
                 _isFirstStart = false;
+                _sceneIsMain = true;
             }
             else if (sceneName.Equals("Menu", StringComparison.OrdinalIgnoreCase) && !_isFirstStart)
             {
                 _isFirstStart = true;
+                _sceneIsMain = false;
             }
+        }
+
+        /// <summary>
+        /// Re-reads every config file from disk (the global Lithium.json and each module's JSON) and, when a
+        /// save is loaded, re-runs each module's <c>Apply()</c> so runtime/prefab mutations pick up the new
+        /// values. Bound to Ctrl+Shift+F8. Patches that read their config live update the instant the config
+        /// object is reloaded; see the keybind notes for the few settings this cannot fully reapply.
+        /// </summary>
+        public void ReloadConfiguration()
+        {
+            Log.Warning("[Lithium] Reloading all configuration...");
+
+            LithiumConfig.Load();
+
+            foreach (ModuleBase module in Modules)
+            {
+                try
+                {
+                    module.Load();
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"[Lithium] {module.GetType().Name}.Load() failed during reload: {e}");
+                }
+            }
+
+            if (_sceneIsMain)
+            {
+                foreach (ModuleBase module in Modules)
+                {
+                    try
+                    {
+                        module.Apply();
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Error($"[Lithium] {module.GetType().Name}.Apply() failed during reload: {e}");
+                    }
+                }
+            }
+
+            Log.Warning(_sceneIsMain
+                ? "[Lithium] Configuration reloaded and reapplied."
+                : "[Lithium] Configuration reloaded (no save loaded — runtime reapply skipped).");
         }
 
         public override void OnUpdate()
         {
             base.OnUpdate();
 
-            // F8 dumps dead drops / properties for authoring the Rent config — a user-facing tool, so it is
-            // available without the Debug flag (it writes a file and prints its path regardless).
+            // F8 is shared between two user-facing tools (neither gated behind the Debug flag):
+            //   Ctrl+Shift+F8 → reload (and reapply) every Lithium config from disk
+            //   plain F8      → dump dead drops / properties for authoring the Rent config
             if (Input.GetKeyDown(KeyCode.F8))
             {
-                RentDebug.Dump();
+                bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+                bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+
+                if (ctrl && shift)
+                    ReloadConfiguration();
+                else
+                    RentDebug.Dump();
             }
 
             // The remaining hotkeys are dev-only tools; gate them behind the global Debug flag (Lithium.json).
