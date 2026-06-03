@@ -568,6 +568,7 @@
 		<Compile Include="Modules\Employees\Patches\PackagerPatch.cs" />
 		<Compile Include="Modules\Employees\Patches\ChemistPatch.cs" />
 		<Compile Include="Modules\Employees\Patches\BotanistPatch.cs" />
+		<Compile Include="Modules\Employees\Patches\EmployeeStuckPatch.cs" />
 		<Compile Include="Modules\PropertyPrices\Patches\ForcePropertyPrices.cs" />
 		<Compile Include="Modules\Vehicles\ModVehicles.cs" />
 		<Compile Include="Modules\WateringCans\ModWateringCan.cs" />

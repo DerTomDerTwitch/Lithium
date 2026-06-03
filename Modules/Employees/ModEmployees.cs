@@ -49,6 +49,13 @@ namespace Lithium.Modules.Employees
     public class ModEmployeesConfiguration : ModuleConfiguration
     {
         public override string Name => "Employees";
+
+        // When true, employees never enter the "stuck" / no-work state caused by repeated pathing
+        // failures (the one you normally clear by punching them). They keep retrying instead of giving
+        // up. The 4 AM shift end is driven by the schedule, not this, so it still applies. See
+        // Patches/EmployeeStuckPatch.cs.
+        public bool PreventWorkStoppage = false;
+
         public BotanistConfiguration Botanists = new BotanistConfiguration();
         public ChemistConfiguration Chemists = new ChemistConfiguration();
         public PackagerConfiguration Packagers = new PackagerConfiguration();
