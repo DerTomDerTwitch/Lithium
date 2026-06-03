@@ -1,13 +1,18 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.ItemFramework;
+using Il2CppScheduleOne.Messaging;
+using Il2CppScheduleOne.NPCs;
 using Il2CppScheduleOne.Property;
 using Il2CppScheduleOne.Storage;
 using Lithium.Helper;
 using Lithium.Modules.Customers.Architecture;
+using MelonLoader;
 using Newtonsoft.Json;
+using UnityEngine;
 
 namespace Lithium.Modules.Rent
 {
@@ -45,10 +50,19 @@ namespace Lithium.Modules.Rent
         [JsonProperty(Order = 3)] public bool SendFinalWarning = true;
 
         /// <summary>
+        /// Days of "paid" rent a freshly bought property gets before rent applies. A property bought during
+        /// play isn't charged for the period it was bought in — its first rent lands one interval later — and
+        /// any charge that would fall within this many days of the purchase is also waived (only matters when
+        /// <see cref="RentIntervalDays"/> is short). Properties already owned when the save loads are
+        /// unaffected: they're billed the current week immediately. 0 = bill freshly bought properties at once.
+        /// </summary>
+        [JsonProperty(Order = 4)] public int FreshPurchaseGraceDays = 3;
+
+        /// <summary>
         /// Per-location settings, keyed by the property's display name. These ship as sensible defaults; any
         /// location not listed is auto-discovered (disabled, $0) the first time a save loads.
         /// </summary>
-        [JsonProperty(Order = 4)] public Dictionary<string, RentLocationConfiguration> Locations = new()
+        [JsonProperty(Order = 5)] public Dictionary<string, RentLocationConfiguration> Locations = new()
         {
             ["RV"] = new(),
             ["Sweatshop"] = new() { Enabled = true, WeeklyRent = 200f, DeadDropName = "North arcade wall", DeadDropGUID = "dd3d22f1-da56-4673-9203-640eeaf915fc", ContactNpcName = "Mrs. Ming" },
@@ -69,6 +83,7 @@ namespace Lithium.Modules.Rent
         {
             RentIntervalDays = ConfigValidator.AtLeast(Name, nameof(RentIntervalDays), RentIntervalDays, 1);
             DaysUntilLockout = ConfigValidator.AtLeast(Name, nameof(DaysUntilLockout), DaysUntilLockout, 0);
+            FreshPurchaseGraceDays = ConfigValidator.AtLeast(Name, nameof(FreshPurchaseGraceDays), FreshPurchaseGraceDays, 0);
 
             foreach (string key in Locations.Keys.ToList())
             {
@@ -92,6 +107,14 @@ namespace Lithium.Modules.Rent
         // very frequently) never touches disk. Rebuilt from persisted state on first tick after a load.
         private static readonly HashSet<string> LockedCodes = new();
 
+        // Property codes owned at the moment this save loaded. Captured once (after ownership is restored) and
+        // consulted only when a location is first seen: those present at load are "established" and bill the
+        // current week immediately, while anything that becomes owned later is "freshly bought" and gets the
+        // FreshPurchaseGraceDays grace. In-memory only — the resulting anchor is persisted, so the
+        // established/fresh choice is made once per location and never re-evaluated on later loads.
+        private readonly HashSet<string> _establishedAtLoad = new();
+        private bool _establishedCaptured;
+
         private int _lastElapsedDay = -1;
         private bool _initialised;
 
@@ -107,9 +130,42 @@ namespace Lithium.Modules.Rent
             // A save just loaded: drop in-memory state so the next access re-resolves this save's file.
             Store.Unload();
             LockedCodes.Clear();
+            _establishedAtLoad.Clear();
+            _establishedCaptured = false;
             _lastElapsedDay = -1;
             _initialised = false;
+
+            // Text the player any outstanding rent as soon as the world has finished loading. Can't do this
+            // inline: on a fresh load the NPC registry / messaging aren't populated yet, so a message sent now
+            // would be silently dropped (the contact NPC won't resolve). Wait for readiness like ModCustomers.
+            MelonCoroutines.Start(LoadReminderRoutine());
         }
+
+        // Waits (capped) for messaging + the NPC registry to come up after a load, then sends the outstanding
+        // -rent reminders once. Mirrors ModCustomers' startup-overview routine.
+        private static IEnumerator LoadReminderRoutine()
+        {
+            float waited = 0f;
+            while (waited < 30f && !WorldReady())
+            {
+                yield return new WaitForSeconds(1f);
+                waited += 1f;
+            }
+
+            if (!WorldReady())
+            {
+                Log.Warning("[Rent] World not ready after 30s; skipped load rent reminders.");
+                yield break;
+            }
+
+            // Small buffer so ownership has settled (properties are restored a moment after the scene inits).
+            yield return new WaitForSeconds(2f);
+            Core.Get<ModRent>()?.SendLoadReminders();
+        }
+
+        private static bool WorldReady() =>
+            MessagingManager.Instance != null
+            && NPCManager.NPCRegistry != null && NPCManager.NPCRegistry.Count > 0;
 
         /// <summary>Called every in-game minute; does real work only when the day rolls over.</summary>
         public void Tick()
@@ -128,6 +184,7 @@ namespace Lithium.Modules.Rent
             if (!_initialised)
             {
                 DiscoverLocations();
+                CaptureEstablishedAtLoad();
                 RebuildLockedFromState();
                 _lastElapsedDay = today;
                 _initialised = true;
@@ -150,32 +207,31 @@ namespace Lithium.Modules.Rent
                 string code = prop.PropertyCode;
                 RentLocationState state = Store.TryGet(code, out RentLocationState s) ? s : new RentLocationState();
 
-                if (state.LastChargedDay < 0)
-                    state.LastChargedDay = today; // anchor the cadence to first sight
-
                 // Frozen while locked: advance the anchor so no back-rent accrues, but keep the owed balance.
+                // Still owed, so keep texting daily until they pay their way back in.
                 if (state.LockedOut)
                 {
                     state.LastChargedDay = today;
+                    RentMessenger.Send(loc, StillLockedMessage(prop, loc, state.Owed));
                     Store.Set(code, state);
                     continue;
                 }
 
-                // Apply any weekly charges that have come due.
-                bool charged = false;
-                while (today - state.LastChargedDay >= Configuration.RentIntervalDays)
-                {
-                    state.LastChargedDay += Configuration.RentIntervalDays;
-                    state.Owed += loc.WeeklyRent;
-                    if (state.DueSinceDay < 0)
-                        state.DueSinceDay = state.LastChargedDay;
-                    charged = true;
-                }
+                // Apply due charges. On first sight the anchor depends on whether this property was already
+                // owned at load (current week billed now) or bought during play (first period free per grace).
+                bool charged = ApplyDueCharges(state, loc, today, _establishedAtLoad.Contains(code));
+
+                // Track whether this location already texted the player this day, so the daily reminder
+                // below doesn't pile on top of a charge / warning / lockout notice.
+                bool messaged = false;
 
                 if (charged)
+                {
                     RentMessenger.Send(loc,
                         $"Rent of ${loc.WeeklyRent:N0} for {prop.PropertyName} is due. Drop it at {loc.DeadDropName}. " +
                         $"You have {Configuration.DaysUntilLockout} day(s) before I change the locks.");
+                    messaged = true;
+                }
 
                 // Overdue handling.
                 if (state.Owed > 0f && state.DueSinceDay >= 0)
@@ -189,6 +245,7 @@ namespace Lithium.Modules.Rent
                         RentMessenger.Send(loc,
                             $"Final warning: ${state.Owed:N0} rent still owed for {prop.PropertyName}. " +
                             $"Pay at {loc.DeadDropName} by tomorrow or you're locked out.");
+                        messaged = true;
                     }
 
                     if (overdue >= Configuration.DaysUntilLockout)
@@ -198,12 +255,105 @@ namespace Lithium.Modules.Rent
                         RentMessenger.Send(loc,
                             $"You're locked out of {prop.PropertyName}. Pay the ${state.Owed:N0} you owe at " +
                             $"{loc.DeadDropName} to get back in.");
+                        messaged = true;
+                    }
+                    else if (!messaged)
+                    {
+                        // Rent still outstanding but no other notice today: send a daily reminder so the
+                        // player gets a nudge from the landlord at the start of every day they owe.
+                        RentMessenger.Send(loc, ReminderMessage(prop, loc, state.Owed));
                     }
                 }
 
                 Store.Set(code, state);
             }
         }
+
+        /// <summary>
+        /// Initialises the cadence anchor on first sight and applies every weekly charge that has come due,
+        /// mutating <paramref name="state"/> in place; returns whether anything was charged. The caller
+        /// persists the result. The first-sight anchor depends on <paramref name="establishedAtLoad"/>:
+        /// <list type="bullet">
+        /// <item>established (owned when the save loaded) — anchored one interval in the past, so the current
+        /// week's rent bills immediately;</item>
+        /// <item>freshly bought (acquired during play) — the period it was bought in is free, so the anchor is
+        /// set to today, deferring the first charge a full interval. Any whole interval that still fits inside
+        /// <see cref="ModRentConfiguration.FreshPurchaseGraceDays"/> is pre-skipped too (only bites when the
+        /// interval is shorter than the grace).</item>
+        /// </list>
+        /// </summary>
+        private bool ApplyDueCharges(RentLocationState state, RentLocationConfiguration loc, int today, bool establishedAtLoad)
+        {
+            if (state.LastChargedDay < 0)
+            {
+                int interval = Configuration.RentIntervalDays;
+                state.LastChargedDay = establishedAtLoad
+                    ? today - interval                                              // bill the current week now
+                    : today + (Configuration.FreshPurchaseGraceDays / interval) * interval; // free until first charge
+            }
+
+            bool charged = false;
+            while (today - state.LastChargedDay >= Configuration.RentIntervalDays)
+            {
+                state.LastChargedDay += Configuration.RentIntervalDays;
+                state.Owed += loc.WeeklyRent;
+                if (state.DueSinceDay < 0)
+                    state.DueSinceDay = state.LastChargedDay;
+                charged = true;
+            }
+            return charged;
+        }
+
+        /// <summary>
+        /// Once the world is ready after a save loads, bring every enabled, owned location's rent up to date
+        /// (charging the current week on first sight) and text the player its status if anything is owed — so
+        /// outstanding rent is both billed and surfaced right away rather than waiting for the next day
+        /// rollover. The charged state is persisted, so it survives the next save/load.
+        /// </summary>
+        private void SendLoadReminders()
+        {
+            if (!Configuration.Enabled)
+                return;
+
+            TimeManager time = TimeManager.Instance;
+            if (time == null)
+                return;
+            int today = time.ElapsedDays;
+
+            // Everything owned at this point is "established", so first-sight billing here charges the current
+            // week (not the freshly-bought grace, which is reserved for properties acquired later during play).
+            CaptureEstablishedAtLoad();
+
+            int sent = 0;
+            foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
+            {
+                string code = prop.PropertyCode;
+                RentLocationState state = Store.TryGet(code, out RentLocationState s) ? s : new RentLocationState();
+
+                // Bill the current week (and any back weeks) now, unless the location is frozen by a lockout.
+                if (!state.LockedOut)
+                    ApplyDueCharges(state, loc, today, _establishedAtLoad.Contains(code));
+
+                Store.Set(code, state); // persist the freshly billed state so it survives save/load
+
+                if (state.Owed <= 0f)
+                    continue;
+
+                RentMessenger.Send(loc, state.LockedOut
+                    ? StillLockedMessage(prop, loc, state.Owed)
+                    : ReminderMessage(prop, loc, state.Owed));
+                sent++;
+            }
+
+            Log.Info($"[Rent] Load reminders sent for {sent} location(s) with outstanding rent.");
+        }
+
+        private static string StillLockedMessage(Property prop, RentLocationConfiguration loc, float owed) =>
+            $"You're still locked out of {prop.PropertyName}. Pay the ${owed:N0} you owe at " +
+            $"{loc.DeadDropName} to get back in.";
+
+        private static string ReminderMessage(Property prop, RentLocationConfiguration loc, float owed) =>
+            $"Reminder: ${owed:N0} rent still owed for {prop.PropertyName}. Drop it at {loc.DeadDropName}.";
 
         /// <summary>
         /// Called when a storage UI closes. If the closed storage is a dead drop assigned to a rent location,
@@ -336,6 +486,32 @@ namespace Lithium.Modules.Rent
             catch (Exception e)
             {
                 Log.Warning($"[Rent] Failed to rebuild locked set: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Snapshot (once per load) the codes of every property/business owned right now. Whichever post-load
+        /// path runs first — the first tick or the load-reminder coroutine — captures the set; both run after
+        /// ownership has been restored. Anything not in this set when first seen was bought during play and so
+        /// qualifies for the freshly-bought grace.
+        /// </summary>
+        private void CaptureEstablishedAtLoad()
+        {
+            if (_establishedCaptured)
+                return;
+            try
+            {
+                _establishedAtLoad.Clear();
+                foreach (Property prop in AllOwned())
+                {
+                    if (!string.IsNullOrEmpty(prop.PropertyCode))
+                        _establishedAtLoad.Add(prop.PropertyCode);
+                }
+                _establishedCaptured = true;
+            }
+            catch (Exception e)
+            {
+                Log.Warning($"[Rent] Failed to capture established locations: {e.Message}");
             }
         }
 

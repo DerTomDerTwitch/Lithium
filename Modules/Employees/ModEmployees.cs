@@ -7,11 +7,6 @@ namespace Lithium.Modules.Employees
         public int MaxAssignedPots = 8;
         public float WalkSpeed = 1.2f;
         public int DailyWage = 200;
-        public float SoilPourTime = 10f;
-        public float WaterPourTime = 10f;
-        public float AdditivePourTime = 10f;
-        public float SeedSowTime = 15f;
-        public float HarvestTime = 15f;
         public int InventorySlotCount = 5;
         public int InventoryRowCount = 1;
     }
@@ -80,7 +75,15 @@ namespace Lithium.Modules.Employees
             return true;
         }
 
-        // Configuration is applied entirely by the per-role NetworkInitialize patches (see Patches/).
+        // Per-employee tuning (wages, walk speed, instance caps) is applied by the per-role
+        // NetworkInitialize patches (see Patches/).
+        //
+        // NOTE: the botanist pour/sow/harvest timings (SoilPourTime, WaterPourTime, AdditivePourTime,
+        // SeedSowTime, IndividualHarvestTime) are deliberately not configurable. They are IL2CPP static
+        // fields whose setter (il2cpp_field_static_set_value) crashes the game with an
+        // AccessViolationException in the installed build — the write is invalid regardless of when/where
+        // it runs. Their only consumers are native, so there is no managed read-site to patch instead.
+        // The corresponding config fields were removed; see BotanistPatch.
         public override void Apply()
         {
         }

@@ -2,6 +2,7 @@ using HarmonyLib;
 using Il2CppScheduleOne.DevUtilities;
 using Il2CppScheduleOne.Money;
 using Il2CppScheduleOne.UI.ATM;
+using UnityEngine;
 
 namespace Lithium.Modules.Banking.Patches
 {
@@ -38,6 +39,16 @@ namespace Lithium.Modules.Banking.Patches
 
             MoneyManager moneyManager = NetworkSingleton<MoneyManager>.Instance;
             if (moneyManager == null)
+                return;
+
+            // The fee is taken from the online balance, but the transaction itself also moves the online
+            // balance (a withdrawal drops it by `amount`). Cap the fee so it can never overdraw the account:
+            // after a withdrawal the balance will be (balance - amount), so the fee must fit within that;
+            // a deposit leaves the pre-transaction balance available. Without this, withdrawing your entire
+            // balance got charged a fee on top and left you negative.
+            float available = moneyManager.onlineBalance - (depositing ? 0f : amount);
+            amountToCharge = Mathf.Min(amountToCharge, Mathf.Max(0f, available));
+            if (amountToCharge <= 0f)
                 return;
 
             moneyManager.CreateOnlineTransaction(

@@ -244,8 +244,10 @@ namespace Lithium.Modules.Customers
         // window. e.g. a 50-unit order at BaseQuantity 10 and 60 min/unit gains 40 * 60 = 2400 mins.
         public float MinutesPerExtraUnit { get; set; } = 60f;
 
-        // Hard cap on the total acceptance window, in in-game minutes (1440 = one in-game day).
-        public int MaxWindowMinutes { get; set; } = 10080; // 7 in-game days
+        // Hard cap on the total acceptance window, in in-game minutes (1440 = one in-game day). Bounded in
+        // code by OfferAcceptanceWindow.AbsoluteMaxWindowMinutes (6 days): a 7-day window lands on the
+        // game's weekly offer rollover and the deal is lost, so the window is never allowed to reach it.
+        public int MaxWindowMinutes { get; set; } = 8640; // 6 in-game days
 
         // When true, the customer sends a follow-up text telling the player how long they have to accept
         // the offer. Sent for EVERY expiring offer (not just extended ones), and works even when the

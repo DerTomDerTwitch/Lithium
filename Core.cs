@@ -52,7 +52,7 @@ namespace Lithium
             new ModVehicles(),
             new ModEndOfDayFreeze(),
             new ModProductTooltips(),
-            new ModBanking()
+            new ModBanking(),
             new ModRent()
         ];
 

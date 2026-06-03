@@ -23,12 +23,9 @@ namespace Lithium.Modules.Employees.Patches
             __instance.Movement.WalkSpeed = config.Botanists.WalkSpeed;
             __instance.DailyWage = config.Botanists.DailyWage;
 
-            // The pour/sow/harvest timings are static on Botanist (shared by all botanists).
-            Botanist.SoilPourTime = config.Botanists.SoilPourTime;
-            Botanist.WaterPourTime = config.Botanists.WaterPourTime;
-            Botanist.AdditivePourTime = config.Botanists.AdditivePourTime;
-            Botanist.SeedSowTime = config.Botanists.SeedSowTime;
-            Botanist.IndividualHarvestTime = config.Botanists.HarvestTime;
+            // The pour/sow/harvest timings (SoilPourTime etc.) are not configurable: writing those IL2CPP
+            // static fields crashes the game with an AccessViolationException in the installed build, so
+            // they have no config fields. See ModEmployees.Apply() for the full explanation.
         }
     }
 }
