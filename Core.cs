@@ -3,6 +3,7 @@ using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.Vehicles;
 using Lithium.Helper;
 using Lithium.Modules;
+using Lithium.Modules.Banking;
 using Lithium.Modules.ChemistryStation;
 using Lithium.Modules.Customers;
 using Lithium.Modules.DryingRacks;
@@ -49,7 +50,8 @@ namespace Lithium
             new ModEffectCombos(),
             new ModVehicles(),
             new ModEndOfDayFreeze(),
-            new ModProductTooltips()
+            new ModProductTooltips(),
+            new ModBanking()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
