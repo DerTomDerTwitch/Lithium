@@ -134,23 +134,32 @@ namespace Lithium.Modules.Customers.Patches
                     .Distinct()
                     .ToList();
 
-                List<ProductDefinition> matching = dealerProducts
-                    .Where(p => ProductHelper.ProductMatchesDesires(p, desires))
-                    .ToList();
+                Func<ProductDefinition, int> availableOf =
+                    p => dealerItems.Where(i => i.ID == p.ID).Sum(i => i.Quantity);
 
-                if (matching.Count == 0)
+                if (!config.Contracts.DealerRequireEffectMatch)
                 {
-                    ProductDefinition chosen = dealerProducts.OrderBy(x => UnityEngine.Random.value).First();
-                    int available = dealerItems.Where(i => i.ID == chosen.ID).Sum(i => i.Quantity);
-                    RewireOrderedProduct(__result, chosen, quality, Mathf.Max(1, available), perOrderBudget);
-                    ApplyReducedPayment(__result, chosen);
-                    CustomerNotifier.NotifyDealerReducedDeal(__instance);
+                    ComposeMatchingOrder(__result, dealerProducts, desires, __instance.CustomerData, quality,
+                        perOrderBudget, availableOf, config.Contracts.DealerSellAtListedPrice);
                 }
                 else
                 {
-                    ComposeMatchingOrder(__result, matching, desires, quality, perOrderBudget,
-                        p => dealerItems.Where(i => i.ID == p.ID).Sum(i => i.Quantity),
-                        config.Contracts.DealerSellAtListedPrice);
+                    List<ProductDefinition> matching = dealerProducts
+                        .Where(p => ProductHelper.ProductMatchesDesires(p, desires))
+                        .ToList();
+
+                    if (matching.Count == 0)
+                    {
+                        ProductDefinition chosen = dealerProducts.OrderBy(x => UnityEngine.Random.value).First();
+                        ReducedDeal deal = ApplyReducedDeal(__result, chosen, quality, Mathf.Max(1, availableOf(chosen)),
+                            perOrderBudget, config.Contracts.DealerSellAtListedPrice);
+                        CustomerNotifier.NotifyDealerReducedDeal(__instance, deal.ProductName, deal.Quantity, deal.UnitPrice, deal.Total);
+                    }
+                    else
+                    {
+                        ComposeMatchingOrder(__result, matching, desires, __instance.CustomerData, quality,
+                            perOrderBudget, availableOf, config.Contracts.DealerSellAtListedPrice);
+                    }
                 }
             }
             else
@@ -162,21 +171,29 @@ namespace Lithium.Modules.Customers.Patches
                     return;
                 }
 
-                List<ProductDefinition> matching = listed
-                    .Where(p => ProductHelper.ProductMatchesDesires(p, desires))
-                    .ToList();
-
-                if (matching.Count == 0)
+                if (!config.Contracts.RequireEffectMatch)
                 {
-                    ProductDefinition chosen = listed.OrderBy(x => UnityEngine.Random.value).First();
-                    RewireOrderedProduct(__result, chosen, quality, int.MaxValue, perOrderBudget);
-                    ApplyReducedPayment(__result, chosen);
-                    CustomerNotifier.NotifyPlayerReducedDeal(__instance);
+                    ComposeMatchingOrder(__result, listed, desires, __instance.CustomerData, quality,
+                        perOrderBudget, _ => int.MaxValue, config.Contracts.SellAtListedPrice);
                 }
                 else
                 {
-                    ComposeMatchingOrder(__result, matching, desires, quality, perOrderBudget,
-                        _ => int.MaxValue, config.Contracts.SellAtListedPrice);
+                    List<ProductDefinition> matching = listed
+                        .Where(p => ProductHelper.ProductMatchesDesires(p, desires))
+                        .ToList();
+
+                    if (matching.Count == 0)
+                    {
+                        ProductDefinition chosen = listed.OrderBy(x => UnityEngine.Random.value).First();
+                        ReducedDeal deal = ApplyReducedDeal(__result, chosen, quality, int.MaxValue,
+                            perOrderBudget, config.Contracts.SellAtListedPrice);
+                        CustomerNotifier.NotifyPlayerReducedDeal(__instance, deal.ProductName, deal.Quantity, deal.UnitPrice, deal.Total);
+                    }
+                    else
+                    {
+                        ComposeMatchingOrder(__result, matching, desires, __instance.CustomerData, quality,
+                            perOrderBudget, _ => int.MaxValue, config.Contracts.SellAtListedPrice);
+                    }
                 }
             }
 
@@ -249,17 +266,59 @@ namespace Lithium.Modules.Customers.Patches
             return Mathf.Clamp(qty, 1, ceiling);
         }
 
-        private static void ApplyReducedPayment(ContractInfo __result, ProductDefinition product)
+        private readonly struct ReducedDeal
+        {
+            public ReducedDeal(string productName, int quantity, float unitPrice, float total)
+            {
+                ProductName = productName;
+                Quantity = quantity;
+                UnitPrice = unitPrice;
+                Total = total;
+            }
+
+            public string ProductName { get; }
+            public int Quantity { get; }
+            public float UnitPrice { get; }
+            public float Total { get; }
+        }
+
+        // Substitute deal: nothing in stock matched the customer's desires, so they buy
+        // something else at a reduced price. The reduction factor is applied exactly once,
+        // on top of the listed price the player actually sells at (when the relevant
+        // SellAtListedPrice flag is set) rather than the raw market value — otherwise the
+        // payout, and the dealer's cut of it, would be undervalued.
+        private static ReducedDeal ApplyReducedDeal(ContractInfo __result, ProductDefinition product,
+            EQuality quality, int maxAvailableQuantity, float perOrderBudget, bool useListedPrice)
         {
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-            int qty = ProductHelper.GetTotalQuantity(__result.Products);
-            __result.Payment = product.MarketValue * qty * config.Contracts.ReducedDealPriceMultiplier;
+
+            float unitPrice = UnitPrice(product, useListedPrice, product.MarketValue);
+
+            int desiredQuantity = ProductHelper.GetTotalQuantity(__result.Products);
+            int finalQuantity = perOrderBudget > 0f
+                ? QuantityFromBudget(perOrderBudget, unitPrice, maxAvailableQuantity)
+                : Mathf.Max(1, Mathf.Min(maxAvailableQuantity, desiredQuantity));
+
+            ProductList list = new();
+            list.entries.Add(new()
+            {
+                ProductID = product.ID,
+                Quality = quality,
+                Quantity = finalQuantity
+            });
+            __result.Products = list;
+
+            float reducedUnit = unitPrice * config.Contracts.ReducedDealPriceMultiplier;
+            __result.Payment = reducedUnit * finalQuantity;
+
+            return new ReducedDeal(product.Name, finalQuantity, reducedUnit, __result.Payment);
         }
 
         private static void ComposeMatchingOrder(
             ContractInfo __result,
             List<ProductDefinition> matching,
             List<string> desires,
+            CustomerData customerData,
             EQuality quality,
             float perOrderBudget,
             Func<ProductDefinition, int> availableOf,
@@ -272,8 +331,8 @@ namespace Lithium.Modules.Customers.Patches
             float gameUnitPrice = desiredQuantity > 0 ? originalPayment / desiredQuantity : 0f;
             bool useBudget = perOrderBudget > 0f;
 
-            ProductDefinition primary = PickWeightedByCoverage(matching, desires, selection.CoverageBiasExponent);
-            ProductDefinition secondary = PickSecondaryProduct(matching, primary, desires, selection);
+            ProductDefinition primary = PickWeightedByCoverage(matching, desires, customerData, selection);
+            ProductDefinition secondary = PickSecondaryProduct(matching, primary, desires, customerData, selection);
 
             float primaryUnit = UnitPrice(primary, useListedPrice, gameUnitPrice);
             int primaryCap = Mathf.Max(1, availableOf(primary));
@@ -325,7 +384,7 @@ namespace Lithium.Modules.Customers.Patches
         }
 
         private static ProductDefinition PickSecondaryProduct(List<ProductDefinition> matching,
-            ProductDefinition primary, List<string> desires, ProductSelection selection)
+            ProductDefinition primary, List<string> desires, CustomerData customerData, ProductSelection selection)
         {
             if (!selection.EnableSecondProduct || matching.Count <= 1 ||
                 UnityEngine.Random.value >= selection.SecondProductChance)
@@ -333,12 +392,18 @@ namespace Lithium.Modules.Customers.Patches
 
             List<ProductDefinition> others = matching.Where(p => p.ID != primary.ID).ToList();
             return others.Count > 0
-                ? PickWeightedByCoverage(others, desires, selection.CoverageBiasExponent)
+                ? PickWeightedByCoverage(others, desires, customerData, selection)
                 : null;
         }
 
+        // Weight = (coveredEffects + 1)^CoverageBiasExponent * drugTypeFactor^DrugTypeBiasExponent.
+        // The +1 base keeps a zero-coverage product selectable (needed when the effect-match
+        // requirement is off and the candidate pool is the full stock) while still strongly
+        // favouring higher coverage. The drug-type factor is the customer's affinity for the
+        // product's drug type mapped to [0,1], so products in a disliked drug type are deprioritised
+        // but never outright excluded.
         private static ProductDefinition PickWeightedByCoverage(
-            List<ProductDefinition> candidates, List<string> desires, float exponent)
+            List<ProductDefinition> candidates, List<string> desires, CustomerData customerData, ProductSelection selection)
         {
             if (candidates.Count == 1)
                 return candidates[0];
@@ -347,8 +412,10 @@ namespace Lithium.Modules.Customers.Patches
             float totalWeight = 0f;
             for (int i = 0; i < candidates.Count; i++)
             {
-                int coverage = Mathf.Max(1, ProductHelper.CoveredEffectCount(candidates[i], desires));
-                weights[i] = Mathf.Pow(coverage, exponent);
+                int coverage = ProductHelper.CoveredEffectCount(candidates[i], desires);
+                float coverageWeight = Mathf.Pow(coverage + 1, selection.CoverageBiasExponent);
+                float drugWeight = DrugTypeWeight(candidates[i], customerData, selection.DrugTypeBiasExponent);
+                weights[i] = coverageWeight * drugWeight;
                 totalWeight += weights[i];
             }
 
@@ -365,21 +432,13 @@ namespace Lithium.Modules.Customers.Patches
             return candidates[candidates.Count - 1];
         }
 
-        private static void RewireOrderedProduct(ContractInfo __result, ProductDefinition product, EQuality quality, int maxAvailableQuantity, float perOrderBudget)
+        private static float DrugTypeWeight(ProductDefinition product, CustomerData customerData, float exponent)
         {
-            int desiredQuantity = ProductHelper.GetTotalQuantity(__result.Products);
-            int finalQuantity = perOrderBudget > 0f
-                ? QuantityFromBudget(perOrderBudget, Mathf.Max(0.01f, product.MarketValue), maxAvailableQuantity)
-                : Mathf.Max(1, Mathf.Min(maxAvailableQuantity, desiredQuantity));
-
-            ProductList list = new();
-            list.entries.Add(new()
-            {
-                ProductID = product.ID,
-                Quality = quality,
-                Quantity = finalQuantity
-            });
-            __result.Products = list;
+            if (exponent <= 0f)
+                return 1f;
+            float affinity = ProductHelper.DrugTypeAffinity(product, customerData);
+            float normalized = Mathf.Clamp01((affinity + 1f) / 2f);
+            return Mathf.Pow(Mathf.Max(0.0001f, normalized), exponent);
         }
     }
 }

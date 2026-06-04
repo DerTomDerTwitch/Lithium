@@ -77,6 +77,18 @@ namespace Lithium.Modules.Customers
             "##DESIRES## ... come on, can't be that hard for ##DEALER## to find, right?"
         ];
 
+        // When true, a customer's desired effects are a hard requirement: if nothing in the
+        // available stock covers them, the order falls back to a reduced-price substitute deal
+        // (ReducedDealPriceMultiplier). When false, effect coverage becomes a soft *preference*
+        // only (see ProductSelection): the best-available product is still chosen — weighted
+        // toward more covered effects and the customer's preferred drug type — but sold at full
+        // price with no substitute discount. Decouples bulk/order-pattern sizing from the
+        // effect-coverage requirement. DealerRequireEffectMatch is the same toggle for
+        // dealer-fulfilled contracts, so the two paths can be governed independently.
+        public bool RequireEffectMatch { get; set; } = true;
+
+        public bool DealerRequireEffectMatch { get; set; } = true;
+
         public float ReducedDealPriceMultiplier { get; set; } = 0.75f;
 
         public bool DealerSellAtListedPrice { get; set; } = true;
@@ -93,23 +105,31 @@ namespace Lithium.Modules.Customers
 
         public string[] ReducedSaleTemplates { get; set; } =
         [
-            "Couldn't find anything ##DESIRES##, so I grabbed something else — paying less for it though.",
-            "You had nothing ##DESIRES##, so I settled for a substitute at a lower price.",
-            "No ##DESIRES##? I'll take something else, but I'm not paying full price for it.",
-            "Bought something off you, but since it wasn't ##DESIRES## I knocked the price down."
+            "Couldn't find anything ##DESIRES##, so I grabbed ##QTY##x ##PRODUCT## instead at a lower ##PRICE_EACH## each — ##TOTAL## total.",
+            "You had nothing ##DESIRES##, so I settled for ##QTY##x ##PRODUCT## at ##PRICE_EACH## each (##TOTAL## in total).",
+            "No ##DESIRES##? I took ##QTY##x ##PRODUCT## instead, but only paid ##PRICE_EACH## each — ##TOTAL## total.",
+            "Bought ##QTY##x ##PRODUCT## off you, but since it wasn't ##DESIRES## I knocked it down to ##PRICE_EACH## each (##TOTAL## total)."
         ];
         public string[] ReducedDealerTemplates { get; set; } =
         [
-            "##DEALER## had nothing ##DESIRES##, so I took a substitute at a lower price.",
-            "Since ##DEALER## didn't have ##DESIRES##, I settled for something cheaper.",
-            "No ##DESIRES## from ##DEALER## — bought something else, but paid less for it.",
-            "Got something from ##DEALER##, but it wasn't ##DESIRES## so I paid a reduced price."
+            "##DEALER## had nothing ##DESIRES##, so I took ##QTY##x ##PRODUCT## at a lower ##PRICE_EACH## each — ##TOTAL## total.",
+            "Since ##DEALER## didn't have ##DESIRES##, I settled for ##QTY##x ##PRODUCT## at ##PRICE_EACH## each (##TOTAL## in total).",
+            "No ##DESIRES## from ##DEALER## — grabbed ##QTY##x ##PRODUCT## instead at ##PRICE_EACH## each, ##TOTAL## total.",
+            "Got ##QTY##x ##PRODUCT## from ##DEALER##, but it wasn't ##DESIRES## so I only paid ##PRICE_EACH## each — ##TOTAL## total."
         ];
     }
 
     public class ProductSelection
     {
+        // Selection weight for a candidate product is coverage^CoverageBiasExponent scaled by a
+        // drug-type factor^DrugTypeBiasExponent, where coverage = (covered desired effects + 1)
+        // and the drug-type factor is the customer's affinity for the product's drug type mapped
+        // to [0,1]. Higher CoverageBiasExponent makes effect coverage dominate; higher
+        // DrugTypeBiasExponent sharpens the preference for the customer's liked drug type.
+        // Set either to 0 to neutralise that dimension.
         public float CoverageBiasExponent { get; set; } = 3f;
+
+        public float DrugTypeBiasExponent { get; set; } = 1f;
 
         public bool EnableSecondProduct { get; set; } = true;
 
@@ -203,6 +223,11 @@ namespace Lithium.Modules.Customers
 
         public override void Validate()
         {
+            Contracts.ProductSelection.CoverageBiasExponent = ConfigValidator.AtLeast(
+                Name, "Contracts.ProductSelection.CoverageBiasExponent", Contracts.ProductSelection.CoverageBiasExponent, 0f);
+            Contracts.ProductSelection.DrugTypeBiasExponent = ConfigValidator.AtLeast(
+                Name, "Contracts.ProductSelection.DrugTypeBiasExponent", Contracts.ProductSelection.DrugTypeBiasExponent, 0f);
+
             Contracts.NotificationWindowStartHour = ConfigValidator.InRange(
                 Name, "Contracts.NotificationWindowStartHour", Contracts.NotificationWindowStartHour, 0, 23);
             Contracts.NotificationWindowEndHour = ConfigValidator.InRange(

@@ -6,6 +6,22 @@ using Lithium.Modules.Customers.Behaviours;
 
 namespace Lithium.Modules.Customers
 {
+    public sealed class ReducedDealDetails
+    {
+        public ReducedDealDetails(string productName, int quantity, float priceEach, float total)
+        {
+            ProductName = productName;
+            Quantity = quantity;
+            PriceEach = priceEach;
+            Total = total;
+        }
+
+        public string ProductName { get; }
+        public int Quantity { get; }
+        public float PriceEach { get; }
+        public float Total { get; }
+    }
+
     public static class CustomerNotifier
     {
         public static void NotifyPlayerProductsNotSuitable(Customer customer)
@@ -20,20 +36,22 @@ namespace Lithium.Modules.Customers
             Notify(customer, config, config.Contracts.SendNotificationForDealers, config.Contracts.DealerTemplates, isDealer: true);
         }
 
-        public static void NotifyPlayerReducedDeal(Customer customer)
+        public static void NotifyPlayerReducedDeal(Customer customer, string productName, int quantity, float priceEach, float total)
         {
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-            Notify(customer, config, config.Contracts.SendNotification, config.Contracts.ReducedSaleTemplates, isDealer: false);
+            Notify(customer, config, config.Contracts.SendNotification, config.Contracts.ReducedSaleTemplates,
+                isDealer: false, new ReducedDealDetails(productName, quantity, priceEach, total));
         }
 
-        public static void NotifyDealerReducedDeal(Customer customer)
+        public static void NotifyDealerReducedDeal(Customer customer, string productName, int quantity, float priceEach, float total)
         {
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-            Notify(customer, config, config.Contracts.SendNotificationForDealers, config.Contracts.ReducedDealerTemplates, isDealer: true);
+            Notify(customer, config, config.Contracts.SendNotificationForDealers, config.Contracts.ReducedDealerTemplates,
+                isDealer: true, new ReducedDealDetails(productName, quantity, priceEach, total));
         }
 
         private static void Notify(Customer customer, ModCustomersConfiguration config, bool gateFlag,
-            string[] templates, bool isDealer)
+            string[] templates, bool isDealer, ReducedDealDetails details = null)
         {
             if (!gateFlag)
                 return;
@@ -44,6 +62,12 @@ namespace Lithium.Modules.Customers
                 .Replace("##DESIRES##", ProductHelper.FormatDesires(customer.CustomerData));
             if (isDealer)
                 msg = msg.Replace("##DEALER##", customer.AssignedDealer.FirstName);
+            if (details != null)
+                msg = msg
+                    .Replace("##QTY##", details.Quantity.ToString())
+                    .Replace("##PRODUCT##", details.ProductName)
+                    .Replace("##PRICE_EACH##", $"${details.PriceEach:N2}")
+                    .Replace("##TOTAL##", $"${details.Total:N0}");
 
             Send(customer, msg);
         }

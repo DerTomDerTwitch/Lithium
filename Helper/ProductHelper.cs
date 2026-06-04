@@ -54,6 +54,23 @@ namespace Lithium.Helper
         public static int CoveredEffectCount(ProductDefinition pd, List<string> desires) =>
             pd.Properties.ToList().Select(p => p.Name).Intersect(desires).Count();
 
+        // The customer's affinity (roughly [-1, 1]; positive = liked, negative = disliked) for the
+        // product's drug type. Returns 0 (neutral) if the customer has no entry for that drug type.
+        public static float DrugTypeAffinity(ProductDefinition pd, CustomerData customerData)
+        {
+            if (pd == null || customerData == null)
+                return 0f;
+            CustomerAffinityData affinities = customerData.DefaultAffinityData;
+            if (affinities == null)
+                return 0f;
+            foreach (ProductTypeAffinity affinity in affinities.ProductAffinities)
+            {
+                if (affinity.DrugType == pd.DrugType)
+                    return affinity.Affinity;
+            }
+            return 0f;
+        }
+
         public static string FormatDesires(CustomerData customerData) => customerData.PreferredProperties.ToList().Select(p => p.Name).SmartJoin(", ", " or ");
 
         public static int GetMatchCount(ProductDefinition pd, List<string> desires)
