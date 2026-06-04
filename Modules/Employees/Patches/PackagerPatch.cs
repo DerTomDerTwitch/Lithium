@@ -12,11 +12,6 @@ namespace Lithium.Modules.Employees.Patches
             if (!ModEmployees.TryBeginConfigure(__instance, out ModEmployeesConfiguration config))
                 return;
 
-            // This runs from inside the game's native NetworkInitialize__Late trampoline, so any
-            // exception escapes into native code (the "during invoking native->managed trampoline"
-            // crash). The configuration entity (and its Stations/Routes list fields) is not guaranteed
-            // to be built yet for every spawned Packager, so guard each dereference and skip — never
-            // throw — when a member is missing.
             var packagerConfig = __instance.configuration;
             if (packagerConfig != null)
             {

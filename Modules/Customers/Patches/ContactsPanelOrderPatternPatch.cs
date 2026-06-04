@@ -9,13 +9,9 @@ using UnityEngine;
 
 namespace Lithium.Modules.Customers.Patches
 {
-    // Appends the customer's order pattern (days + cadence) to the phone Contacts customer panel, right
-    // where their desires/spending are listed. ContactsDetailPanel.Open() repopulates the labels each
-    // time it runs, so appending in a postfix is safe and never compounds.
     [HarmonyPatch(typeof(ContactsDetailPanel), nameof(ContactsDetailPanel.Open))]
     public class ContactsPanelOrderPatternPatch
     {
-        // EDay is Monday = 0 .. Sunday = 6.
         private static readonly string[] DayAbbr =
             { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
 
@@ -28,15 +24,11 @@ namespace Lithium.Modules.Customers.Patches
             if (!config.OrderPatterns.ShowPatternInContactPanel)
                 return;
 
-            // The displayed pattern is only the real schedule when order patterns are reshaping it — the
-            // same condition CustomerGetOrderDaysPatch uses — so don't show a pattern that won't hold.
             if (LevelManager.Instance == null || LevelManager.Instance.TotalXP < config.Contracts.XPRequired)
                 return;
 
             if (__instance.PropertiesLabel == null || __instance.PropertiesContainer == null)
                 return;
-            // Mirror the desires section's visibility — don't reveal a pattern where the panel itself
-            // hides the customer's details (e.g. a still-locked customer).
             if (!__instance.PropertiesContainer.gameObject.activeInHierarchy)
                 return;
 
@@ -48,8 +40,6 @@ namespace Lithium.Modules.Customers.Patches
             if (customer == null || customer.CustomerData == null)
                 return;
 
-            // Open() can run more than once per view and doesn't reliably reset the label text, so guard
-            // against appending our line a second time.
             const string marker = "\nOrders: ";
             if (__instance.PropertiesLabel.text.Contains(marker))
                 return;
@@ -66,11 +56,6 @@ namespace Lithium.Modules.Customers.Patches
                 __instance.PropertiesLabel.text += "\nPrefers: " + preferences;
         }
 
-        // Per-drug-type affinity, shown as an independent signed percentage (affinity * 100). Positive =
-        // liked, negative = disliked; the values are not a distribution and don't sum to 100%. Kept to a
-        // single compact line: the detail panel body has a bounded height budget (the game itself caps its
-        // most-purchased list for the same reason), and adding one row per drug type pushes the body past
-        // that budget, shoving the name header out of the panel's visible area.
         private static string DescribePreferences(CustomerData data)
         {
             if (data.DefaultAffinityData == null || data.DefaultAffinityData.ProductAffinities == null)

@@ -3,10 +3,6 @@ using Il2CppScheduleOne.Employees;
 
 namespace Lithium.Modules.Employees.Patches
 {
-    // Botanist does not declare a Start method (only Awake / NetworkInitialize__*), and the timing
-    // fields were renamed from ALL_CAPS constants to PascalCase properties (HARVEST_TIME is now
-    // IndividualHarvestTime). Apply on NetworkInitialize__Late like the other employee patches so the
-    // configuration object is fully initialized.
     [HarmonyPatch(typeof(Botanist), nameof(Botanist.NetworkInitialize__Late))]
     public class BotanistPatch
     {
@@ -16,16 +12,10 @@ namespace Lithium.Modules.Employees.Patches
             if (!ModEmployees.TryBeginConfigure(__instance, out ModEmployeesConfiguration config))
                 return;
 
-            // The assignable-pot cap lives on the Botanist itself; BotanistConfiguration has no
-            // station-list field (unlike Chemist/Packager), so MaxAssignedPots is all we set here.
             __instance.MaxAssignedPots = config.Botanists.MaxAssignedPots;
 
             __instance.Movement.WalkSpeed = config.Botanists.WalkSpeed;
             __instance.DailyWage = config.Botanists.DailyWage;
-
-            // The pour/sow/harvest timings (SoilPourTime etc.) are not configurable: writing those IL2CPP
-            // static fields crashes the game with an AccessViolationException in the installed build, so
-            // they have no config fields. See ModEmployees.Apply() for the full explanation.
         }
     }
 }

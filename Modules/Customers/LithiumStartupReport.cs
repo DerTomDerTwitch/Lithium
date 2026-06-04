@@ -6,14 +6,8 @@ using Lithium.Helper;
 
 namespace Lithium.Modules.Customers
 {
-    /// <summary>
-    /// Sends a single compact "here's where you stand" text from the Lithium contact shortly after a save
-    /// loads: dealers on payroll, unlocked customers, listed products and overall effect coverage. Driven
-    /// by a delayed coroutine in <see cref="ModCustomers.Apply"/> so the world is fully loaded first.
-    /// </summary>
     public static class LithiumStartupReport
     {
-        // The save has settled enough to text: messaging is up and the customer roster has populated.
         public static bool WorldReady() =>
             MessagingManager.Instance != null &&
             Customer.UnlockedCustomers != null && Customer.UnlockedCustomers.Count > 0;

@@ -7,10 +7,6 @@ using Il2CppScheduleOne.UI;
 
 namespace Lithium.Modules.Employees.Patches
 {
-    // The original version reimplemented StorageMenu.Open entirely and referenced row-count fields from
-    // an unrelated mod (Employees.*RowAmount / Extra.DealerRowAmount) that do not exist in this project.
-    // Rewritten as a postfix that simply overrides the grid column count after the menu opens, driven by
-    // this module's per-role InventoryRowCount config.
     [HarmonyPatch(typeof(StorageMenu), nameof(StorageMenu.Open), typeof(IItemSlotOwner), typeof(string), typeof(string))]
     public class StorageMenuRowPatch
     {

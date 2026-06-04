@@ -7,11 +7,6 @@ using MelonLoader.Utils;
 
 namespace Lithium.Modules.Customers
 {
-    /// <summary>
-    /// Debug helper (F7): dumps every NPC with their messaging/customer status so a safe "unused" NPC
-    /// can be picked to host the Lithium coverage-update contact. A line starting with "**" is a
-    /// candidate: not a customer, already has a conversation, and has no message history yet.
-    /// </summary>
     public static class NpcRosterDebug
     {
         public static void Dump()

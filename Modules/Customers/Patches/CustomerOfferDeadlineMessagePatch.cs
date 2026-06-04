@@ -8,17 +8,9 @@ using Lithium.Modules.Customers.Architecture;
 
 namespace Lithium.Modules.Customers.Patches
 {
-    // Appends the acceptance deadline as the final bubble of the contract offer message itself, so the
-    // player sees how long they have right inside the deal — after the details, not as a separate text.
-    //
-    // Done by editing the offer's MessageChain (a list of message strings) rather than sending a new
-    // message: a separate message renders immediately and lands BEFORE the deferred deal chain, and
-    // NotifyPlayerOfContract can fire more than once per offer (which sent the text twice). Appending to
-    // the chain with an idempotency guard fixes both — the line travels with the deal and is added once.
     [HarmonyPatch(typeof(Customer), nameof(Customer.NotifyPlayerOfContract))]
     public class CustomerOfferDeadlineMessagePatch
     {
-        // EDay is Monday = 0 .. Sunday = 6.
         private static readonly string[] DayNames =
             { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
 
@@ -45,17 +37,12 @@ namespace Lithium.Modules.Customers.Patches
 
             int quantity = ProductHelper.GetTotalQuantity(contract.Products);
 
-            // contract.ExpiresAfter isn't populated yet when the offer message is built, so derive the
-            // acceptance window from the game's offer-expiry default and apply the same large-order
-            // extension the enforced window uses (see CustomerOfferDeadlinePatch).
             int windowMins = Customer.OFFER_EXPIRY_TIME_MINS;
             if (window.Enabled)
                 windowMins = OfferAcceptanceWindow.Extend(windowMins, quantity, window);
 
             GameDateTime deadline = TimeManager.Instance.GetDateTime().AddMins(windowMins);
 
-            // Deterministic template choice (stable per offer) so the duplicate guard below can match the
-            // exact line on a repeated NotifyPlayerOfContract call.
             int idx = ((deadline.GetMinSum() % templates.Length) + templates.Length) % templates.Length;
             string line = templates[idx]
                 .Replace("##QUANTITY##", quantity.ToString())
@@ -63,14 +50,13 @@ namespace Lithium.Modules.Customers.Patches
 
             foreach (string existing in offerMessage.Messages)
                 if (existing == line)
-                    return; // already appended to this chain.
+                    return;
 
             Log.Info($"[Lithium] Offer deadline: {windowMins} min window (base {Customer.OFFER_EXPIRY_TIME_MINS}, " +
                 $"qty {quantity}) -> {FormatDeadline(deadline)}");
             offerMessage.Messages.Add(line);
         }
 
-        // Renders a deadline as e.g. "today, 6:00 PM", "tomorrow, 9:30 AM" or "Monday, 12:00 PM".
         private static string FormatDeadline(GameDateTime deadline)
         {
             int dayDelta = deadline.elapsedDays - TimeManager.Instance.ElapsedDays;
@@ -86,7 +72,6 @@ namespace Lithium.Modules.Customers.Patches
             return dayDelta < 7 ? $"{dayName}, {time}" : $"{dayName} ({dayDelta} days), {time}";
         }
 
-        // hhmm is a 24-hour HHMM value (e.g. 1430 -> "2:30 PM", 0 -> "12:00 AM").
         private static string Format12Hour(int hhmm)
         {
             int hours = hhmm / 100;

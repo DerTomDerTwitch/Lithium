@@ -4,9 +4,6 @@ using Il2CppScheduleOne.Product;
 
 namespace Lithium.Modules.Customers.Patches
 {
-    // When the player lists or delists a product, recompute customer coverage and text the player (via
-    // the Lithium contact) which customers became covered / uncovered, plus the overall percentage.
-    // Prefix snapshots coverage before the change; postfix diffs against the post-change state.
     [HarmonyPatch(typeof(ProductManager), nameof(ProductManager.SetProductListed), new[] { typeof(string), typeof(bool) })]
     public class ProductListingPatch
     {

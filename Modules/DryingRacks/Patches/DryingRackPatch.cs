@@ -17,7 +17,6 @@ namespace Lithium.Modules.DryingRacks.Patches
 
             Dictionary<string, int> dryTimes = config.PerQualityDryTimes;
 
-            // Clone the list to avoid modification issues during iteration
             foreach (DryingOperation dryingOperation in __instance.DryingOperations.ToArray())
             {
                 dryingOperation.Time++;
@@ -47,7 +46,7 @@ namespace Lithium.Modules.DryingRacks.Patches
                 }
             }
 
-            return false; // Skip the original MinPass()
+            return false;
         }
     }
 }

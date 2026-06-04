@@ -1,12 +1,5 @@
 namespace Lithium.Helper
 {
-    /// <summary>
-    /// Small helpers for sanity-checking loaded configuration values. Each clamps a value into a
-    /// sensible range and logs a one-line warning (warnings are always shown) describing what was
-    /// wrong and what was used instead. The point is that a typo'd config — e.g. a negative plant
-    /// growth modifier or a min greater than its max — fails loudly and safely rather than silently
-    /// breaking gameplay. Call these from a config's <c>Validate()</c> override.
-    /// </summary>
     public static class ConfigValidator
     {
         public static float AtLeast(string config, string field, float value, float min)
@@ -55,7 +48,6 @@ namespace Lithium.Helper
             return value;
         }
 
-        /// <summary>Ensures <paramref name="min"/> &lt;= <paramref name="max"/>, swapping (and warning) if reversed.</summary>
         public static void EnsureOrdered(string config, string minField, string maxField, ref int min, ref int max)
         {
             if (min <= max)
@@ -64,7 +56,6 @@ namespace Lithium.Helper
             (min, max) = (max, min);
         }
 
-        /// <summary>Ensures <paramref name="min"/> &lt;= <paramref name="max"/>, swapping (and warning) if reversed.</summary>
         public static void EnsureOrdered(string config, string minField, string maxField, ref float min, ref float max)
         {
             if (min <= max)

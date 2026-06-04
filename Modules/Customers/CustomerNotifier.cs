@@ -6,11 +6,6 @@ using Lithium.Modules.Customers.Behaviours;
 
 namespace Lithium.Modules.Customers
 {
-    /// <summary>
-    /// Sends the "you don't stock an effect I want" complaint texts. Driven daily (spread across the
-    /// day) by CustomerDailyNotificationPatch. A per-customer cooldown (CustomerNotificationState)
-    /// prevents the same customer texting more than once per NotificationCooldownInMinutes.
-    /// </summary>
     public static class CustomerNotifier
     {
         public static void NotifyPlayerProductsNotSuitable(Customer customer)
@@ -37,9 +32,6 @@ namespace Lithium.Modules.Customers
             Notify(customer, config, config.Contracts.SendNotificationForDealers, config.Contracts.ReducedDealerTemplates, isDealer: true);
         }
 
-        // Shared flow for all four notifications: bail if the relevant SendNotification flag is off or the
-        // per-customer cooldown hasn't elapsed, then pick a random template, fill its placeholders and send.
-        // Dealer templates additionally support the ##DEALER## placeholder (the assigned dealer's name).
         private static void Notify(Customer customer, ModCustomersConfiguration config, bool gateFlag,
             string[] templates, bool isDealer)
         {
@@ -56,8 +48,6 @@ namespace Lithium.Modules.Customers
             Send(customer, msg);
         }
 
-        // Returns true (and stamps the time) only if the cooldown has elapsed since this customer was
-        // last notified, so a customer texts at most once per cooldown window.
         private static bool ReadyToNotify(Customer customer, ModCustomersConfiguration config)
         {
             if (customer.TryGetComponent(out CustomerNotificationState state))

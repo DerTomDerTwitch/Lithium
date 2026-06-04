@@ -24,9 +24,6 @@ namespace Lithium.Modules.Customers.Patches
             if (modCustomers == null)
                 return;
 
-            // Multiplayer: this is the server-authoritative payout path and the bonus handlers roll
-            // random amounts, so only the server may apply it. (On a host IsServer is true; pure
-            // clients skip it and receive the networked payout.)
             if (!InstanceFinder.IsServer)
                 return;
 

@@ -5,10 +5,6 @@ using UnityEngine;
 
 namespace Lithium.Modules.Storyline.Patches
 {
-    // The game reworked the RV destruction flow: the old RV.SetExploded() was split into
-    // BlowUp() (plays the explosion sequence) and SetDestroyed() (sets the destroyed state).
-    // We intercept both so that, regardless of the code path, the explosion is skipped and the
-    // wrecked-RV model is swapped in quietly.
     [HarmonyPatch(typeof(RV), nameof(RV.BlowUp))]
     public class RVBlowUpPatch
     {
@@ -25,7 +21,6 @@ namespace Lithium.Modules.Storyline.Patches
 
     internal static class RVExplosionPrevention
     {
-        // Returns true to run the original method, false to replace it with the quiet wreckage swap.
         public static bool Handle(RV __instance)
         {
             ModStorylineConfiguration config = Core.Get<ModStoryline>().Configuration;

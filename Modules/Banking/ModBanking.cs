@@ -10,20 +10,12 @@ using Newtonsoft.Json.Converters;
 
 namespace Lithium.Modules.Banking
 {
-    /// <summary>How a bank transfer fee is calculated.</summary>
     public enum EFeeMode
     {
-        /// <summary>Fee is a percentage of the transferred amount (with optional min/max bounds).</summary>
         Percent,
-        /// <summary>Fee is a flat amount regardless of how much is transferred.</summary>
         Fixed
     }
 
-    /// <summary>
-    /// A fee charged on ATM transactions (deposits convert cash → bank balance, withdrawals the reverse).
-    /// The fee is always taken from the online (bank) balance. Configure either a percentage with optional
-    /// floor/cap (e.g. "5%, at least $5, at most $50") or a flat amount (e.g. "always $5").
-    /// </summary>
     public class TransferFeeConfiguration
     {
         [JsonProperty(Order = 1)] public bool Enabled = true;
@@ -31,18 +23,15 @@ namespace Lithium.Modules.Banking
         [JsonConverter(typeof(StringEnumConverter))]
         [JsonProperty(Order = 2)] public EFeeMode Mode = EFeeMode.Percent;
 
-        // Percent mode:
-        [JsonProperty(Order = 3)] public float Percent = 5f;   // 5 = 5%
-        [JsonProperty(Order = 4)] public float MinFee = 5f;    // 0 = no floor
-        [JsonProperty(Order = 5)] public float MaxFee = 0f;    // 0 = no cap
+        [JsonProperty(Order = 3)] public float Percent = 5f;
+        [JsonProperty(Order = 4)] public float MinFee = 5f;
+        [JsonProperty(Order = 5)] public float MaxFee = 0f;
 
-        // Fixed mode:
         [JsonProperty(Order = 6)] public float FixedAmount = 0f;
 
         [JsonProperty(Order = 7)] public bool ApplyToDeposits = false;
         [JsonProperty(Order = 8)] public bool ApplyToWithdrawals = true;
 
-        /// <summary>Returns the fee to charge for a transaction of <paramref name="amount"/> (never more than the amount itself).</summary>
         public float Compute(float amount)
         {
             if (!Enabled || amount <= 0f)
@@ -74,12 +63,9 @@ namespace Lithium.Modules.Banking
         }
     }
 
-    /// <summary>ATM deposit limits. A value of -1 means "no limit" for that period.</summary>
     public class AtmConfiguration
     {
-        // The vanilla game enforces only a weekly deposit limit (default $10,000). -1 disables it.
         [JsonProperty(Order = 1)] public float WeeklyDepositLimit = 10000f;
-        // Added by Lithium: a per-day deposit cap on top of the weekly one. -1 disables it.
         [JsonProperty(Order = 2)] public float DailyDepositLimit = -1f;
 
         [JsonIgnore] public bool WeeklyLimited => WeeklyDepositLimit >= 0f;
@@ -87,35 +73,18 @@ namespace Lithium.Modules.Banking
 
         public void Validate()
         {
-            // Normalise any negative value to the canonical -1 ("unlimited").
             if (WeeklyDepositLimit < 0f) WeeklyDepositLimit = -1f;
             if (DailyDepositLimit < 0f) DailyDepositLimit = -1f;
         }
     }
 
-    /// <summary>Per-business laundering settings, keyed by the business' display name in the laundering UI.</summary>
     public class BusinessLaunderingConfiguration
     {
-        /// <summary>
-        /// The business' laundering capacity (max cash in flight). Defaults to the in-game base value, which is
-        /// captured from the live business and written here the first time a save loads. A value of -1 means
-        /// "leave the game's base capacity untouched"; any value &gt;= 0 is applied as a fixed capacity.
-        /// </summary>
         [JsonProperty(Order = 1)] public float Capacity = -1f;
-        /// <summary>Multiplies laundering throughput speed. &gt;1 finishes faster, &lt;1 slower, 1 = vanilla.</summary>
         [JsonProperty(Order = 2)] public float SpeedMultiplier = 1f;
-        /// <summary>Percentage skimmed off each completed laundering job (5 = 5% — launder $1000, keep $950).
-        /// 0 = no cut. Expressed as a percent (0–100) to match TransferFee.Percent.</summary>
         [JsonProperty(Order = 3)] public float Cut = 0f;
     }
 
-    /// <summary>
-    /// Optional scaling of laundering capacity and/or speed by the player's current rank. Each dictionary maps a
-    /// rank name (see <see cref="ERank"/>: Street_Rat, Hoodlum, Peddler, Hustler, Bagman, Enforcer, Shot_Caller,
-    /// Block_Boss, Underlord, Baron, Kingpin) to a multiplier. The multiplier of the highest rank you have reached
-    /// applies (a step function); ranks you have not reached yet are ignored. Multipliers stack on top of the
-    /// per-business values.
-    /// </summary>
     public class LaunderingXpScalingConfiguration
     {
         [JsonProperty(Order = 1)] public bool Enabled = false;
@@ -131,25 +100,15 @@ namespace Lithium.Modules.Banking
         };
     }
 
-    /// <summary>
-    /// A daily summary of laundering activity, texted by an in-game NPC repurposed as a contact at the start of
-    /// each new day. Reports per-business amounts laundered and lost to the cut, plus totals.
-    /// </summary>
     public class LaunderingReportConfiguration
     {
         [JsonProperty(Order = 1)] public bool Enabled = false;
-        /// <summary>Full name of the NPC who sends the report. Defaults to the weapons merchant; find exact names via the F7 roster dump.</summary>
         [JsonProperty(Order = 2)] public string ContactNpcName = "Herbert";
-        /// <summary>Optional rename for the contact in the Messages app (e.g. "Lithium"). Empty leaves the NPC's own name untouched.</summary>
         [JsonProperty(Order = 3)] public string ContactDisplayName = "";
     }
 
     public class LaunderingConfiguration
     {
-        /// <summary>
-        /// Per-business overrides. Entries are auto-discovered when a save loads, so the exact business names
-        /// always appear here after the first launch; the seeded names are the vanilla laundering fronts.
-        /// </summary>
         [JsonProperty(Order = 1)] public Dictionary<string, BusinessLaunderingConfiguration> Businesses = new()
         {
             { "Laundromat", new() },
@@ -178,27 +137,18 @@ namespace Lithium.Modules.Banking
             foreach (string key in Laundering.Businesses.Keys.ToList())
             {
                 BusinessLaunderingConfiguration b = Laundering.Businesses[key];
-                // Capacity is a fixed value; any negative is normalised to the -1 "use game base" sentinel.
                 if (b.Capacity < 0f)
                     b.Capacity = -1f;
                 b.SpeedMultiplier = ConfigValidator.AtLeast(Name, $"Laundering.Businesses[{key}].SpeedMultiplier", b.SpeedMultiplier, 0.01f);
-                // Cut is a percent (0–100); 100 would confiscate the entire laundered payout.
                 b.Cut = ConfigValidator.InRange(Name, $"Laundering.Businesses[{key}].Cut", b.Cut, 0f, 100f);
             }
         }
     }
 
-    /// <summary>
-    /// Banking tweaks: ATM weekly/daily deposit limits, a configurable bank-transfer fee on ATM transactions,
-    /// per-business money-laundering capacity and speed, and optional rank-based scaling of laundering capacity
-    /// and speed. See the patches under <c>Patches/</c>; each short-circuits on <see cref="ModuleConfiguration.Enabled"/>.
-    /// </summary>
     public class ModBanking : ModuleBase<ModBankingConfiguration>
     {
-        /// <summary>Running total of cash deposited at ATMs today; reset on day change (and on save load).</summary>
         public static float DailyDepositSum;
 
-        /// <summary>Per-business laundering tallies accumulated since the last daily report (gross laundered + amount lost to the cut).</summary>
         private sealed class LaunderTally
         {
             public float Laundered;
@@ -223,13 +173,6 @@ namespace Lithium.Modules.Banking
             DiscoverBusinesses();
         }
 
-        /// <summary>
-        /// Ensures every laundering business has a config entry whose <see cref="BusinessLaunderingConfiguration.Capacity"/>
-        /// default is the live in-game base capacity. Adds missing entries and fills any entry still holding the -1
-        /// "use game base" sentinel with the captured base value, then saves if anything changed. Safe to call
-        /// repeatedly (business capacities are read from the untouched <c>LaunderCapacity</c> field, not the
-        /// overridden getter), so a later call backfills bases that weren't ready at load.
-        /// </summary>
         private void DiscoverBusinesses()
         {
             Il2CppSystem.Collections.Generic.List<Business> businesses = Business.Businesses;
@@ -251,7 +194,6 @@ namespace Lithium.Modules.Banking
                     Log.Info($"[Banking] Discovered laundering business '{name}'");
                 }
 
-                // Fill the default capacity from the live in-game base value once it is available.
                 if (entry.Capacity < 0f && business.LaunderCapacity > 0f)
                 {
                     entry.Capacity = business.LaunderCapacity;
@@ -263,10 +205,6 @@ namespace Lithium.Modules.Banking
                 Configuration.SaveConfiguration();
         }
 
-        /// <summary>
-        /// Returns the multiplier from <paramref name="byRank"/> for the highest rank the player has reached
-        /// (step function), or 1 when scaling is disabled / unavailable / nothing matches.
-        /// </summary>
         public static float GetRankMultiplier(LaunderingXpScalingConfiguration xp, Dictionary<string, float> byRank)
         {
             if (xp == null || !xp.Enabled || byRank == null || byRank.Count == 0)
@@ -296,7 +234,6 @@ namespace Lithium.Modules.Banking
             return multiplier < 0f ? 1f : multiplier;
         }
 
-        /// <summary>Records a completed laundering job for the daily report. Called from the laundering-cut patch.</summary>
         public static void RecordLaundering(string businessName, float laundered, float cut)
         {
             if (string.IsNullOrEmpty(businessName))
@@ -312,10 +249,6 @@ namespace Lithium.Modules.Banking
             tally.Cut += cut;
         }
 
-        /// <summary>
-        /// Driven every in-game minute (see <c>Patches/BankingDailyTickPatch.cs</c>); does real work only when the
-        /// day rolls over, sending the laundering report for the day that just ended. Handles multi-day sleep jumps.
-        /// </summary>
         public void Tick()
         {
             if (!Configuration.Enabled)
@@ -327,8 +260,6 @@ namespace Lithium.Modules.Banking
 
             int today = time.ElapsedDays;
 
-            // First tick after a load: capture any base capacities that weren't ready at Apply, and anchor the
-            // day counter without reporting (state may have only just loaded).
             if (!_initialised)
             {
                 DiscoverBusinesses();

@@ -5,8 +5,6 @@ using Lithium.Modules.Customers.Architecture;
 
 namespace Lithium.Modules.Customers.Patches
 {
-    // The player refused a contract offer (declined it in the Messages app). Flag the customer so they
-    // re-attempt an order the next day instead of waiting for their next scheduled order day.
     [HarmonyPatch(typeof(Customer), nameof(Customer.ContractRejected))]
     public class CustomerContractRejectedPatch
     {
@@ -17,7 +15,6 @@ namespace Lithium.Modules.Customers.Patches
             if (!config.Enabled || !config.Contracts.Enabled || !config.Contracts.RetryNextDayOnRefusal)
                 return;
 
-            // Scheduling is server-authoritative; only the server owns the retry bookkeeping.
             if (!InstanceFinder.IsServer)
                 return;
 

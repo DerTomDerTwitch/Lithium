@@ -521,6 +521,14 @@
 		<Compile Include="Modules\Rent\Patches\DeadDropClosePatch.cs" />
 		<Compile Include="Modules\Rent\Patches\PropertyDoorAccessPatch.cs" />
 		<Compile Include="Modules\Rent\Patches\RentDailyTickPatch.cs" />
+		<Compile Include="Modules\Dealers\ModDealers.cs" />
+		<Compile Include="Modules\Dealers\Architecture\DealerMessenger.cs" />
+		<Compile Include="Modules\Dealers\Architecture\DealerWeaponInspector.cs" />
+		<Compile Include="Modules\Dealers\Architecture\DealerShortageCalculator.cs" />
+		<Compile Include="Modules\Dealers\Architecture\DealerStatsStore.cs" />
+		<Compile Include="Modules\Dealers\Patches\DealerTickPatch.cs" />
+		<Compile Include="Modules\Dealers\Patches\DealerRobberyPatch.cs" />
+		<Compile Include="Modules\Dealers\Patches\DealerSaleTrackingPatch.cs" />
 		<Compile Include="Modules\Customers\Architecture\BonusPaymentHandler.cs" />
 		<Compile Include="Modules\Customers\Architecture\ContractRetryTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\OrderPatternProfile.cs" />
@@ -549,8 +557,8 @@
 		<Compile Include="Modules\Customers\Patches\ContactsPanelOrderPatternPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerNextOrderMessagePatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerOfferDeadlinePatch.cs" />
+		<Compile Include="Modules\Customers\Patches\GhostOfferRegenerationPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerOfferDeadlineMessagePatch.cs" />
-		<Compile Include="Modules\Customers\Patches\CustomerOfferExpiryWindowPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerDailyNotificationPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerGetOrderDaysPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerOfferSuccessPatch.cs" />

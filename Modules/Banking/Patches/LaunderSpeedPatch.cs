@@ -4,13 +4,6 @@ using UnityEngine;
 
 namespace Lithium.Modules.Banking.Patches
 {
-    /// <summary>
-    /// Controls laundering speed. Each laundering job is a <see cref="LaunderingOperation"/> whose
-    /// <c>completionTime_Minutes</c> (set in its constructor) is how long it takes to finish. Patching the
-    /// constructor is the single chokepoint for every job regardless of how it was started. The effective
-    /// speed multiplier is the per-business value times the optional rank-based speed multiplier; a higher
-    /// multiplier means a shorter completion time.
-    /// </summary>
     [HarmonyPatch(typeof(LaunderingOperation), MethodType.Constructor, new[] { typeof(Business), typeof(float), typeof(int) })]
     public class LaunderSpeedPatch
     {

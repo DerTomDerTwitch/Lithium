@@ -6,12 +6,6 @@ using Il2CppScheduleOne.Property;
 
 namespace Lithium.Modules.Rent.Patches
 {
-    /// <summary>
-    /// Enforces the rent lock-out at a property's doors. Patches the access check that the door uses to decide
-    /// whether the player may open it; when the property is locked for non-payment we deny only the
-    /// <see cref="EDoorSide.Exterior"/> side, so the player can still leave from the inside but cannot return
-    /// from the outside — the same one-way behaviour the game uses when the police are pursuing the player.
-    /// </summary>
     [HarmonyPatch(typeof(PropertyDoorController), nameof(PropertyDoorController.CanPlayerAccess),
         new Type[] { typeof(EDoorSide), typeof(string) }, new ArgumentType[] { ArgumentType.Normal, ArgumentType.Out })]
     public class PropertyDoorAccessPatch
@@ -21,12 +15,12 @@ namespace Lithium.Modules.Rent.Patches
         {
             ModRent mod = Core.Get<ModRent>();
             if (mod == null || !mod.Configuration.Enabled)
-                return true; // run the original
+                return true;
 
             try
             {
                 if (side != EDoorSide.Exterior)
-                    return true; // leaving from the inside is always allowed
+                    return true;
 
                 Property prop = __instance.Property;
                 if (prop == null || !ModRent.IsLockedOut(prop.PropertyCode))
@@ -34,7 +28,7 @@ namespace Lithium.Modules.Rent.Patches
 
                 reason = "The locks have been changed. Pay your overdue rent.";
                 __result = false;
-                return false; // skip the original — entry denied
+                return false;
             }
             catch (Exception e)
             {

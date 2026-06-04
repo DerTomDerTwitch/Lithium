@@ -32,7 +32,7 @@ namespace Lithium.Modules.DryingRacks.Patches
             float right = -left;
             __instance.Rect.anchoredPosition = new Vector2(Mathf.Lerp(left, right, tNorm), 0f);
 
-            return false; // Skip the original method
+            return false;
         }
     }
 }

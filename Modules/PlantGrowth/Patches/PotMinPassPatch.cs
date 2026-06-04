@@ -8,11 +8,6 @@ namespace Lithium.Modules.PlantGrowth.Patches
     [HarmonyPatch(typeof(Pot), nameof(Pot.OnMinPass))]
     public class PotMinPassPatch
     {
-        // Pot.GrowSpeedMultiplier is a field-backed accessor that Il2CppInterop cannot hook (callers
-        // read the field directly, so a getter postfix never takes effect). OnMinPass reads that field
-        // when it advances growth, so instead of patching the getter we write the modified value onto
-        // the field right before OnMinPass runs — using the base captured at Pot.Start so the modifier
-        // never compounds. Water drain is handled the same way.
         [HarmonyPrefix]
         public static void Prefix(Pot __instance)
         {

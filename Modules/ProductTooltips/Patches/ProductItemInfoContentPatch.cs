@@ -12,26 +12,11 @@ using UnityEngine.UI;
 
 namespace Lithium.Modules.ProductTooltips.Patches
 {
-    /// <summary>
-    /// Adds the player's discovered forward mix recipes for the hovered product to its info panel as a
-    /// block of icon rows: "[mixer icon] → [result icon] Result Name" (mixing this product with that
-    /// ingredient yields the result). Only discovered recipes are shown.
-    ///
-    /// <para>Implementation notes (from tooltip-diag.log investigation): the product info panel uses
-    /// purely MANUAL layout (no ContentSizeFitter/LayoutGroup) and sizes its <c>Container</c> from
-    /// <c>ItemInfoContent.Height</c>. <c>ItemInfoPanel.Open</c> fires more than once per hover on a POOLED
-    /// content instance, so we (a) remember the true vanilla height per content to stay idempotent and
-    /// (b) only rebuild rows when the product changes. Our rows live under a single child object
-    /// ("LithiumMixes") of the content so they're easy to clear. Recipe data is in
-    /// <c>ProductManager.mixRecipes</c>; base vs. mixer is resolved by which ingredient is a registered
-    /// mix ingredient. The vanilla <c>DescriptionLabel</c> (always hidden for products) is cloned as the
-    /// style template for our text.</para>
-    /// </summary>
     [HarmonyPatch(typeof(ItemInfoPanel), nameof(ItemInfoPanel.Open), new[] { typeof(ItemInstance), typeof(RectTransform) })]
     internal static class ProductInfoPanelMixesPatch
     {
         private const string RootName = "LithiumMixes";
-        private const float TopMargin = 4f;     // gap between effects and our block
+        private const float TopMargin = 4f;
         private const float HeaderHeight = 16f;
         private const float LeftPad = 6f;
 
@@ -63,10 +48,6 @@ namespace Lithium.Modules.ProductTooltips.Patches
                 List<MixRow> rows = product != null ? BuildForwardRecipes(product, config) : new List<MixRow>();
                 string productId = product != null ? product.ID : "";
 
-                // Anchor below the LOWEST ACTIVE effect label, not the panel's fixed height: the vanilla
-                // panel reserves space for all effect slots, so a product with few effects has empty slots
-                // that would otherwise show as a gap above our block. Measuring is independent of our own
-                // changes, so this stays idempotent without tracking the original height.
                 float effectsBottom = MeasureEffectsBottom(content, productContent);
 
                 if (rows.Count == 0)
@@ -83,7 +64,6 @@ namespace Lithium.Modules.ProductTooltips.Patches
                 float blockHeight = HeaderHeight + rows.Count * rowHeight + TopMargin;
                 float newHeight = effectsBottom + TopMargin + blockHeight;
 
-                // Rebuild rows only when the product changed (Open double-fires for the same product).
                 bool needRebuild = existingRoot == null || _lastProduct.GetValueOrDefault(contentId) != productId;
                 RectTransform root;
                 if (needRebuild)
@@ -122,7 +102,6 @@ namespace Lithium.Modules.ProductTooltips.Patches
 
             float fontSize = config.FontSize > 0 ? config.FontSize : template.fontSize;
 
-            // Header
             MakeText(root, template, $"<b>{config.MixesHeader}</b>", LeftPad, 0f, 160f, HeaderHeight, fontSize, TextAlignmentOptions.TopLeft);
 
             float arrowW = 12f;
@@ -186,10 +165,6 @@ namespace Lithium.Modules.ProductTooltips.Patches
             go.SetActive(true);
         }
 
-        /// <summary>
-        /// Distance (in content-local units) from the top of the content to the bottom of the lowest
-        /// active, non-empty effect label. Falls back to <c>content.Height</c> if none are measurable.
-        /// </summary>
         private static float MeasureEffectsBottom(ItemInfoContent content, ProductItemInfoContent productContent)
         {
             RectTransform contentRect = content.GetComponent<RectTransform>();
@@ -198,7 +173,7 @@ namespace Lithium.Modules.ProductTooltips.Patches
 
             Il2CppStructArray<Vector3> contentCorners = new(4);
             contentRect.GetWorldCorners(contentCorners);
-            float topY = contentCorners[1].y; // top-left world Y
+            float topY = contentCorners[1].y;
 
             float lowestY = topY;
             bool any = false;
@@ -271,8 +246,6 @@ namespace Lithium.Modules.ProductTooltips.Patches
                 }
             }
 
-            // Only reveal recipes whose RESULT the player has already discovered, so the tooltip never
-            // spoils a product they haven't made yet (matching this module's documented behaviour).
             HashSet<string> discoveredIds = new();
             foreach (ProductDefinition discovered in ProductManager.DiscoveredProducts.ToList())
             {

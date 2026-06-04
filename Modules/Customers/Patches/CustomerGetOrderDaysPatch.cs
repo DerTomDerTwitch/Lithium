@@ -17,9 +17,6 @@ namespace Lithium.Modules.Customers.Patches
             if (!config.Enabled || !config.Contracts.Enabled)
                 return;
 
-            // Order-pattern reshaping (frequency). Gated like CustomerContractGenerationPatch so the
-            // frequency reshaping and the quantity scaling switch on together (otherwise sub-XP customers
-            // get fewer order days without the matching volume conservation).
             if (config.OrderPatterns.Enabled && LevelManager.Instance.TotalXP >= config.Contracts.XPRequired)
             {
                 OrderPatternProfile profile = OrderPatternProfile.Create(
@@ -29,10 +26,6 @@ namespace Lithium.Modules.Customers.Patches
                     __result = profile.OrderDays.ToIL2CPPList();
             }
 
-            // Retry-next-day: make sure a refused/expired customer is scheduled to re-attempt on their
-            // retry day, even if that weekday isn't part of their normal (or pattern) schedule. Runs
-            // independently of order patterns so the retry works either way. (CustomerContractGenerationPatch
-            // clears the flag once the customer actually gets a fresh offer.)
             if (config.Contracts.RetryNextDayOnRefusal &&
                 ContractRetryTracker.HasPendingRetry(__instance.name, out EDay retryDay))
             {

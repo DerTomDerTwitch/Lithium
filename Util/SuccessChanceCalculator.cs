@@ -38,8 +38,6 @@ namespace Lithium.Util
             }
 
             int qualityDiff = (int)quality - (int)standard;
-            // Over-delivery is capped so a Heavenly sample to a Trash-standard NPC adds only a little
-            // (and can't rescue a poorly-covered sample); under-delivery keeps its full penalty.
             int effectiveDiff = qualityDiff > 0 ? Math.Min(qualityDiff, maxQualityOverDeliveryLevels) : qualityDiff;
             Log.Info($"Sample offering: Quality difference {qualityDiff} levels (effective {effectiveDiff})");
             acceptance += qualityLevelModifier * effectiveDiff;
@@ -51,8 +49,6 @@ namespace Lithium.Util
                 {
                     if (productAffinity.DrugType == drugType)
                     {
-                        // Affinity is signed (-1..1). Disliked/neutral (<= 0) rejects the sample;
-                        // positive affinity is curved so acceptance climbs quickly (sharpness < 1).
                         float aff = productAffinity.Affinity;
                         float factor = aff <= 0f ? 0f : Mathf.Pow(Mathf.Clamp01(aff), drugAffinitySharpness);
                         Log.Info($"Sample offering: Drug affinity {aff:0.##} -> factor {factor * 100:F1}%");

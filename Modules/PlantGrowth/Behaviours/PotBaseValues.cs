@@ -10,8 +10,6 @@ namespace Lithium.Modules.PlantGrowth.Behaviours
 
         public void Init(Pot pot)
         {
-            // The water system was reworked into "moisture": Pot.WaterDrainPerHour is now
-            // GrowContainer._moistureDrainPerHour (Pot derives from GrowContainer).
             BaseWaterDrainPerHour = pot._moistureDrainPerHour;
             BaseGrowSpeedMultiplier = pot.GrowSpeedMultiplier;
         }

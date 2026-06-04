@@ -8,15 +8,6 @@ using UnityEngine;
 
 namespace Lithium.Modules.Customers.Patches
 {
-    // Bulk orders consolidate several normal orders into a single delivery. Vanilla grants the same per-deal
-    // affection and XP regardless of order size, so a weekly order worth ~7 daily orders would otherwise
-    // pay out like one deal. We measure the affection and XP the game awards for this handover and add the
-    // remainder, so the total scales with the order's quantity multiplier (a 7x-volume order -> ~7x reward),
-    // matching what the separate deliveries it replaced would have earned.
-    //
-    // Measuring the game's own award (rather than granting a guessed constant) keeps the bonus exactly
-    // multiplier-times the real reward whatever the game's internal formula is, and makes a duplicate
-    // ProcessHandoverServerSide fire harmless — the second pass measures a ~0 gain and tops up nothing.
     [HarmonyPatch(typeof(Customer), nameof(Customer.ProcessHandoverServerSide))]
     public static class CustomerBulkRewardPatch
     {
@@ -38,16 +29,12 @@ namespace Lithium.Modules.Customers.Patches
             if (bulk == null || !bulk.Enabled)
                 return;
 
-            // Only a completed (finalized) handover pays out; a cancelled one has nothing to scale.
             if (outcome != HandoverScreen.EHandoverOutcome.Finalize)
                 return;
 
-            // Rewards are server-authoritative; clients receive them via RPC.
             if (!InstanceFinder.IsServer)
                 return;
 
-            // The bulk multiplier only exists when order patterns are actively reshaping orders — the same
-            // gate CustomerContractGenerationPatch / CustomerGetOrderDaysPatch use.
             if (!config.OrderPatterns.Enabled || LevelManager.Instance == null ||
                 LevelManager.Instance.TotalXP < config.Contracts.XPRequired)
                 return;
@@ -61,7 +48,6 @@ namespace Lithium.Modules.Customers.Patches
                 __instance.CustomerData.MinOrdersPerWeek,
                 __instance.CustomerData.MaxOrdersPerWeek).QuantityMultiplier;
 
-            // No bulk (this order is one normal order's worth or less) — nothing to top up.
             if (multiplier <= 1f)
                 return;
 
@@ -80,8 +66,6 @@ namespace Lithium.Modules.Customers.Patches
 
             BulkRewards bulk = Core.Get<ModCustomers>().Configuration.Contracts.BulkRewards;
 
-            // The game already paid one order's worth of reward; "extra" covers the remaining orders the
-            // bulk delivery stands in for, so base + base * extra = base * multiplier.
             float extra = _effectiveMultiplier - 1f;
 
             if (bulk.ScaleRelationship && __instance != null &&

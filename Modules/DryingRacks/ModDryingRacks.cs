@@ -7,8 +7,6 @@ namespace Lithium.Modules.DryingRacks
     {
         public override string Name => "DryingRacks";
         public int Capacity { get; set; } = 20;
-        // Minutes spent at each starting tier before the operation advances to the next quality.
-        // Graduated so reaching higher tiers takes progressively longer (Heavenly is the cap).
         public Dictionary<string, int> PerQualityDryTimes = new()
         {
             { nameof(EQuality.Trash), 240 },

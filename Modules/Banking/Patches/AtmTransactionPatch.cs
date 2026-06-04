@@ -6,12 +6,6 @@ using UnityEngine;
 
 namespace Lithium.Modules.Banking.Patches
 {
-    /// <summary>
-    /// Hooks the start of an ATM transaction (<c>ATMInterface.ProcessTransaction(amount, depositing)</c>) to:
-    /// (1) accumulate today's deposits for the per-day cap, and (2) charge the configured bank-transfer fee.
-    /// The fee is always taken from the online (bank) balance via a fee transaction, so a $X deposit nets
-    /// +$(X-fee) and a $X withdrawal costs an extra $fee from the account.
-    /// </summary>
     [HarmonyPatch(typeof(ATMInterface), nameof(ATMInterface.ProcessTransaction))]
     public class AtmTransactionPatch
     {
@@ -41,11 +35,6 @@ namespace Lithium.Modules.Banking.Patches
             if (moneyManager == null)
                 return;
 
-            // The fee is taken from the online balance, but the transaction itself also moves the online
-            // balance (a withdrawal drops it by `amount`). Cap the fee so it can never overdraw the account:
-            // after a withdrawal the balance will be (balance - amount), so the fee must fit within that;
-            // a deposit leaves the pre-transaction balance available. Without this, withdrawing your entire
-            // balance got charged a fee on top and left you negative.
             float available = moneyManager.onlineBalance - (depositing ? 0f : amount);
             amountToCharge = Mathf.Min(amountToCharge, Mathf.Max(0f, available));
             if (amountToCharge <= 0f)

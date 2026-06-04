@@ -7,6 +7,7 @@ using Lithium.Modules.Banking;
 using Lithium.Modules.BrickPress;
 using Lithium.Modules.ChemistryStation;
 using Lithium.Modules.Customers;
+using Lithium.Modules.Dealers;
 using Lithium.Modules.DryingRacks;
 using Lithium.Modules.EffectCombos;
 using Lithium.Modules.Employees;
@@ -55,7 +56,8 @@ namespace Lithium
             new ModProductTooltips(),
             new ModBanking(),
             new ModRent(),
-            new ModBrickPress()
+            new ModBrickPress(),
+            new ModDealers()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
@@ -81,8 +83,6 @@ namespace Lithium
 
         private bool _isFirstStart = true;
 
-        // True while a save (the "Main" scene) is loaded. A config reload only re-runs Apply() when this
-        // is set, because Apply() touches live game objects/singletons that don't exist at the menu.
         private bool _sceneIsMain;
 
         public override void OnSceneWasInitialized(int buildIndex, string sceneName)
@@ -105,12 +105,6 @@ namespace Lithium
             }
         }
 
-        /// <summary>
-        /// Re-reads every config file from disk (the global Lithium.json and each module's JSON) and, when a
-        /// save is loaded, re-runs each module's <c>Apply()</c> so runtime/prefab mutations pick up the new
-        /// values. Bound to Ctrl+Shift+F8. Patches that read their config live update the instant the config
-        /// object is reloaded; see the keybind notes for the few settings this cannot fully reapply.
-        /// </summary>
         public void ReloadConfiguration()
         {
             Log.Warning("[Lithium] Reloading all configuration...");
@@ -153,9 +147,6 @@ namespace Lithium
         {
             base.OnUpdate();
 
-            // F8 is shared between two user-facing tools (neither gated behind the Debug flag):
-            //   Ctrl+Shift+F8 → reload (and reapply) every Lithium config from disk
-            //   plain F8      → dump dead drops / properties for authoring the Rent config
             if (Input.GetKeyDown(KeyCode.F8))
             {
                 bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
@@ -167,7 +158,6 @@ namespace Lithium
                     RentDebug.Dump();
             }
 
-            // The remaining hotkeys are dev-only tools; gate them behind the global Debug flag (Lithium.json).
             if (!Log.DebugEnabled)
                 return;
 

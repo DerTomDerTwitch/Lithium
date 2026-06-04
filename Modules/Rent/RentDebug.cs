@@ -9,11 +9,6 @@ using UnityEngine;
 
 namespace Lithium.Modules.Rent
 {
-    /// <summary>
-    /// Debug helper (F8): dumps every dead drop (name, GUID, region, world position) and every owned
-    /// property/business (display name, code, position) plus the nearest dead drop to each. Use it in-game
-    /// to fill in the per-location <c>DeadDropName</c>/<c>DeadDropGUID</c> mapping in Rent.json.
-    /// </summary>
     public static class RentDebug
     {
         public static void Dump()
@@ -48,7 +43,6 @@ namespace Lithium.Modules.Rent
                 System.IO.Directory.CreateDirectory(dir);
                 string path = System.IO.Path.Combine(dir, "RentLocations.txt");
                 System.IO.File.WriteAllText(path, sb.ToString());
-                // Always-visible (this is a manually triggered user action, not background logging).
                 Log.Warning($"[Rent] Wrote dead drop / property dump to {path}");
             }
             catch (Exception ex)
@@ -93,11 +87,6 @@ namespace Lithium.Modules.Rent
             sb.AppendLine($"{owned}name=\"{prop.PropertyName}\"  code={prop.PropertyCode}  pos=({pos.x:F1}, {pos.y:F1}, {pos.z:F1})  nearestDrop={near}");
         }
 
-        /// <summary>
-        /// Lists NPCs usable as a location's <c>ContactNpcName</c>. Entries marked ** are good candidates
-        /// (they have a Messages conversation and are not customers); customers are flagged because texting
-        /// them for rent could interfere with their normal deals.
-        /// </summary>
         private static void DumpContacts(StringBuilder sb)
         {
             sb.AppendLine("=== Available Contacts (set as ContactNpcName) ===");

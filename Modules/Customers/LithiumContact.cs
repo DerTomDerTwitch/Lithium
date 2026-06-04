@@ -4,11 +4,6 @@ using Lithium.Helper;
 
 namespace Lithium.Modules.Customers
 {
-    /// <summary>
-    /// Repurposes an existing in-game NPC's Messages conversation as the "Lithium" contact: renames
-    /// the conversation, marks it known so it shows up, and sends texts through it. The NPC is resolved
-    /// by display name each time (no caching) so a save reload's fresh NPC instance is always used.
-    /// </summary>
     public static class LithiumContact
     {
         public static void Send(string message)

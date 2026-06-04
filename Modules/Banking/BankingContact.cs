@@ -6,12 +6,6 @@ using Lithium.Helper;
 
 namespace Lithium.Modules.Banking
 {
-    /// <summary>
-    /// Sends the daily laundering report through an existing in-game NPC's Messages conversation (resolved by
-    /// name every time, so a reloaded save's fresh instance is used). The NPC is marked as a known contact so it
-    /// surfaces in the Messages app. Resolution falls back to a name-prefix match, so a configured first name
-    /// (e.g. the weapons merchant "Herbert") still resolves even when the exact last name isn't known.
-    /// </summary>
     public static class BankingContact
     {
         public static void Send(string contactNpcName, string displayName, string message)
@@ -46,14 +40,12 @@ namespace Lithium.Modules.Banking
             if (string.IsNullOrEmpty(name) || NPCManager.NPCRegistry == null)
                 return null;
 
-            // Exact full-name match first.
             foreach (NPC npc in NPCManager.NPCRegistry.ToList())
             {
                 if (npc != null && string.Equals(npc.fullName, name, StringComparison.OrdinalIgnoreCase))
                     return npc;
             }
 
-            // Fallback: first whose full name starts with the configured value (handles unknown last names).
             foreach (NPC npc in NPCManager.NPCRegistry.ToList())
             {
                 if (npc != null && !string.IsNullOrEmpty(npc.fullName)

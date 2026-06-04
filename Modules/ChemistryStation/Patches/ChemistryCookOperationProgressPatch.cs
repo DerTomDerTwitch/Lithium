@@ -6,18 +6,9 @@ using UnityEngine;
 
 namespace Lithium.Modules.ChemistryStation.Patches
 {
-    // ChemistryCookOperation has no GetCookDuration to scale (unlike OvenCookOperation/MixingStation),
-    // so we turn Progress into a real speed factor instead of the old flat "bonus steps per tick".
-    // Vanilla advances the integer CurrentTime by `mins` each call and completes once it reaches the
-    // recipe duration; we rescale that advance to mins * Speed. Because CurrentTime is an integer, a
-    // per-operation fractional carry is accumulated so slow-down (Speed < 1) stays accurate instead of
-    // truncating to zero and stalling, while speed-up (Speed > 1) and pause (Speed == 0) also work —
-    // all without duplicating any vanilla completion logic.
     [HarmonyPatch(typeof(ChemistryCookOperation), nameof(ChemistryCookOperation.Progress))]
     public class ChemistryCookOperationProgressPatch
     {
-        // Keyed by the native object pointer (stable for the operation's lifetime) rather than the
-        // managed wrapper, then pruned on completion.
         private static readonly Dictionary<IntPtr, float> Carry = new();
 
         [HarmonyPrefix]

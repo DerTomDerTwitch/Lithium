@@ -14,12 +14,8 @@ namespace Lithium.Modules.Shops.Patches
     [HarmonyPatch(typeof(Player), nameof(Player.NetworkInitialize__Late))]
     public class SupplierStartPatch
     {
-        // A by-ref accessor to one of the config's named override fields, so a single loop can both
-        // auto-populate (`??= new()`, which writes the field back) and read each entry — replacing the
-        // 11-case shop switch and the 4× copy-pasted supplier block.
         private delegate ref T ConfigRef<T>(ModShopsConfiguration configuration);
 
-        // Maps each in-game shop code to its config field.
         private static readonly Dictionary<string, ConfigRef<ShopListingSettings>> ShopConfigByCode = new()
         {
             ["thrifty_threads"] = c => ref c.ThriftyThreads,
@@ -35,7 +31,6 @@ namespace Lithium.Modules.Shops.Patches
             ["handy_hanks"] = c => ref c.HandyHanks,
         };
 
-        // Each online supplier: how to find its live NPC, and its config field.
         private static readonly (Func<Supplier> Find, ConfigRef<SupplierListingOverride> Config)[] Suppliers =
         {
             (() => UnityEngine.Object.FindObjectOfType<Albert>(), c => ref c.Albert),
@@ -49,17 +44,9 @@ namespace Lithium.Modules.Shops.Patches
         {
             ModShopsConfiguration configuration = Core.Get<ModShops>().Configuration;
 
-            // Rank gating is global (on the item definition), so apply it first and by item ID via the
-            // Registry — this works even for shops whose GameObject we don't discover (e.g. Oscar's Dark
-            // Market). Doing it before ApplyShopOverrides means the per-shop RefreshUnlockStatus below
-            // reflects the lifted/changed requirements for any shop we do find.
             if (configuration.Enabled)
                 ApplyItemRankOverrides(configuration);
 
-            // Always populate the config with the live shop/supplier values so the user has a
-            // ready-to-edit template, even while the module (or an individual shop's Override flag)
-            // is disabled. The actual overrides are only applied when Enabled — the population and
-            // application steps are gated independently inside the two helpers below.
             ApplyShopOverrides();
             ApplySupplierOverrides();
             configuration.SaveConfiguration();
@@ -73,8 +60,6 @@ namespace Lithium.Modules.Shops.Patches
                 if (supplier == null)
                     return;
 
-                // Add a price override for every online item we don't already track, filling the
-                // default (empty) config and any items added by later game patches.
                 foreach (PhoneShopInterface.Listing listing in supplier.OnlineShopItems)
                 {
                     if (!configuration.PriceOverrides.ContainsKey(listing.Item.ID))
@@ -129,8 +114,6 @@ namespace Lithium.Modules.Shops.Patches
             }
         }
 
-        // Injects listings for items the shop doesn't natively sell (config: AddedItems). Gated behind the
-        // shop's Override flag, like the rest of the active overrides.
         private static void ApplyAddedListings(ShopInterface shopInterface, ShopListingSettings shopSettings)
         {
             if (!shopSettings.Override || shopSettings.AddedItems == null || shopSettings.AddedItems.Count == 0)
@@ -142,8 +125,6 @@ namespace Lithium.Modules.Shops.Patches
                 string itemId = entry.Key;
                 AddedListing spec = entry.Value;
 
-                // Don't double-add: if the shop already lists it (natively or from a previous load this
-                // session), tweaks belong in ItemOverrides instead.
                 if (shopInterface.GetListing(itemId) != null)
                     continue;
 
@@ -157,8 +138,6 @@ namespace Lithium.Modules.Shops.Patches
 
                 try
                 {
-                    // The listing carries no category itself — the shop derives the tab from the item's own
-                    // ShopCategories, so the added item shows under its natural category (and "All").
                     ShopListing listing = new ShopListing
                     {
                         name = item.Name,
@@ -170,14 +149,11 @@ namespace Lithium.Modules.Shops.Patches
                     };
                     listing.CurrentStock = listing.DefaultStock;
 
-                    // Negative price = keep the item's own base price (see ItemListingOverride.Price).
                     if (spec.Price >= 0f)
                     {
                         listing.OverridePrice = true;
                         listing.OverriddenPrice = spec.Price;
                     }
-
-                    // Rank gating for the item is applied globally in ApplyItemRankOverrides.
 
                     shopInterface.Listings.Add(listing);
                     shopInterface.CreateListingUI(listing);
@@ -201,13 +177,9 @@ namespace Lithium.Modules.Shops.Patches
         {
             configSetting ??= new ShopListingSettings();
 
-            // A freshly-created entry has no item overrides yet, so adopt the shop's real payment type.
             if (configSetting.ItemOverrides.Count == 0)
                 configSetting.PaymentType = shopInterface.PaymentType;
 
-            // Add an override for every listing we don't already track. This populates the default
-            // (empty) config the first time a save is loaded and picks up items added by later game
-            // patches, while leaving any existing user-edited overrides untouched.
             foreach (ShopListing listing in listings)
             {
                 if (configSetting.ItemOverrides.ContainsKey(listing.Item.ID))
@@ -219,8 +191,6 @@ namespace Lithium.Modules.Shops.Patches
                     Price = listing.Price,
                     Stock = listing.LimitedStock ? listing.DefaultStock : -1,
                     RestockRate = listing.RestockRate,
-                    // Seed the rank fields with the item's live gating so the JSON shows real values to
-                    // edit, while leaving them effectively a no-op until the user changes them.
                     RequiresRank = listing.Item.RequiresLevelToPurchase,
                     RequiredRank = requiredRank.Rank,
                     RequiredRankTier = requiredRank.Tier,
@@ -248,24 +218,15 @@ namespace Lithium.Modules.Shops.Patches
                 listing.CurrentStock = listing.DefaultStock;
                 listing.RestockRate = overrideItem.RestockRate;
 
-                // A negative price means "leave the item's native price alone" — useful for rank-only
-                // overrides (e.g. lifting the brick press requirement without knowing its base price).
-                // Auto-populated entries always carry the real price, so this only triggers when the user
-                // explicitly sets it negative.
                 if (overrideItem.Price >= 0f)
                 {
                     listing.OverridePrice = true;
                     listing.OverriddenPrice = overrideItem.Price;
                 }
 
-                // Rank gating is applied globally in ApplyItemRankOverrides (it lives on the shared item
-                // definition, not the listing), so it is intentionally not handled here.
             }
         }
 
-        // Applies rank-requirement overrides directly to item definitions via the Registry, for every
-        // opted-in (RequiresRank != null) entry in any active (Override) shop's ItemOverrides or AddedItems.
-        // Decoupled from shop discovery so it works even when the selling shop's GameObject isn't found.
         private static void ApplyItemRankOverrides(ModShopsConfiguration configuration)
         {
             foreach (ConfigRef<ShopListingSettings> configRef in ShopConfigByCode.Values)

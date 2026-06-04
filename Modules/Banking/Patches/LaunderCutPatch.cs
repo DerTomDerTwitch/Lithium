@@ -6,12 +6,6 @@ using UnityEngine;
 
 namespace Lithium.Modules.Banking.Patches
 {
-    /// <summary>
-    /// Skims a configurable cut off each completed laundering job, charged to the player's BANK (online) balance
-    /// as a laundering fee (launder $4000 with a 10 (%) cut and $400 is taken from the bank). The cut is capped at
-    /// the available bank balance so it can never overdraw the account. It also records the gross laundered amount
-    /// and the cut for the daily laundering report.
-    /// </summary>
     [HarmonyPatch(typeof(Business), nameof(Business.CompleteOperation))]
     public class LaunderCutPatch
     {
@@ -35,8 +29,6 @@ namespace Lithium.Modules.Banking.Patches
                 cutPercent = business.Cut;
             }
 
-            // Cut is a percent (0–100), charged to the bank (online) balance as a laundering fee. Cap it at the
-            // available bank balance so a large cut (or a low balance) can never drive the account negative.
             float cut = laundered * (cutPercent / 100f);
             if (cut > 0f)
             {

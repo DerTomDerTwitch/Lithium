@@ -3,14 +3,6 @@ using Il2CppScheduleOne.Property;
 
 namespace Lithium.Modules.Banking.Patches
 {
-    /// <summary>
-    /// Controls the laundering capacity cap per business. <c>Business.appliedLaunderLimit</c> is the effective
-    /// ceiling on cash in flight that the laundering UI and start-operation logic check, so adjusting its getter
-    /// is the single chokepoint for caps. The configured per-business capacity (a fixed value defaulting to the
-    /// in-game base) replaces the base unless it is the -1 "use game base" sentinel, then the optional rank-based
-    /// capacity multiplier is applied on top — so "scale the laundered amount with XP" is just a capacity
-    /// multiplier that grows the cap as the player ranks up.
-    /// </summary>
     [HarmonyPatch(typeof(Business), nameof(Business.appliedLaunderLimit), MethodType.Getter)]
     public class LaunderCapacityPatch
     {

@@ -9,15 +9,6 @@ using Lithium.Helper;
 
 namespace Lithium.Modules.Customers.Patches
 {
-    // Sends each customer a daily complaint text when neither the player's listed products nor their
-    // assigned dealer offer any of the effects the customer wants — every day, not only on the days
-    // the game would have generated an order.
-    //
-    // The exact time of day is derived deterministically from the customer's name (the same
-    // StableHash used for order patterns), so the texts are spread across the active hours instead of
-    // all arriving at once. PassMinute fires once per in-game minute; each customer's slot is matched
-    // exactly, so it fires at most once per day. The window sits in daytime hours so sleeping (which
-    // skips minutes at night) doesn't cause missed days.
     [HarmonyPatch(typeof(TimeManager), nameof(TimeManager.PassMinute))]
     public class CustomerDailyNotificationPatch
     {
@@ -33,11 +24,9 @@ namespace Lithium.Modules.Customers.Patches
             int windowStartMinute = config.Contracts.NotificationWindowStartHour * 60;
             int windowEndMinute = config.Contracts.NotificationWindowEndHour * 60;
 
-            // Server-authoritative, mirroring contract generation, so the host doesn't double-send.
             if (!InstanceFinder.IsServer)
                 return;
 
-            // Same XP gate as the contract system these notifications belong to.
             if (LevelManager.Instance == null || LevelManager.Instance.TotalXP < config.Contracts.XPRequired)
                 return;
 
@@ -60,10 +49,6 @@ namespace Lithium.Modules.Customers.Patches
                 if (desires.Count == 0)
                     continue;
 
-                // Only nudge when there's nothing at all to sell. If something is available (even
-                // without the wanted effect), the customer instead does a reduced substitute deal,
-                // which sends its own "bought reduced" text from CustomerContractGenerationPatch —
-                // so this daily nudge would otherwise contradict it.
                 if (customer.AssignedDealer != null)
                 {
                     customer.DealerHasSuitableProduct(out List<ItemInstance> dealerItems);

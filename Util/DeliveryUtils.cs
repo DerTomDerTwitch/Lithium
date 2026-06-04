@@ -21,10 +21,6 @@ public static class DeliveryUtils
         {
             if (ingameShops.TryGetValue(entry.Key, out DeliveryShop shop))
             {
-                // The game replaced the runtime-settable DeliveryShop.IsAvailable with AvailableByDefault,
-                // and the delivery fee is now computed by GetDeliveryFee() (no setter). Availability is
-                // driven here via AvailableByDefault + GameObject.SetActive; the fee override is applied
-                // through DeliveryShopFeePatch on GetDeliveryFee().
                 bool available;
                 switch (entry.Value.Availability)
                 {

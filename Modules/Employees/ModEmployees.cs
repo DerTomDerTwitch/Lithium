@@ -50,10 +50,6 @@ namespace Lithium.Modules.Employees
     {
         public override string Name => "Employees";
 
-        // When true, employees never enter the "stuck" / no-work state caused by repeated pathing
-        // failures (the one you normally clear by punching them). They keep retrying instead of giving
-        // up. The 4 AM shift end is driven by the schedule, not this, so it still applies. See
-        // Patches/EmployeeStuckPatch.cs.
         public bool PreventWorkStoppage = false;
 
         public BotanistConfiguration Botanists = new BotanistConfiguration();
@@ -67,9 +63,6 @@ namespace Lithium.Modules.Employees
     {
         public static readonly HashSet<Employee> ConfiguredEmployees = [];
 
-        // Shared guard for the per-role employee patches: succeeds (yielding the config) only when the
-        // module is enabled and this employee hasn't been configured yet, so each one is tuned exactly
-        // once. Replaces the identical module-null + Enabled + ConfiguredEmployees.Add preamble.
         public static bool TryBeginConfigure(Employee employee, out ModEmployeesConfiguration config)
         {
             config = null;
@@ -82,15 +75,6 @@ namespace Lithium.Modules.Employees
             return true;
         }
 
-        // Per-employee tuning (wages, walk speed, instance caps) is applied by the per-role
-        // NetworkInitialize patches (see Patches/).
-        //
-        // NOTE: the botanist pour/sow/harvest timings (SoilPourTime, WaterPourTime, AdditivePourTime,
-        // SeedSowTime, IndividualHarvestTime) are deliberately not configurable. They are IL2CPP static
-        // fields whose setter (il2cpp_field_static_set_value) crashes the game with an
-        // AccessViolationException in the installed build — the write is invalid regardless of when/where
-        // it runs. Their only consumers are native, so there is no managed read-site to patch instead.
-        // The corresponding config fields were removed; see BotanistPatch.
         public override void Apply()
         {
         }

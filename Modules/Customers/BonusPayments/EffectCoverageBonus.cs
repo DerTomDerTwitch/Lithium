@@ -58,7 +58,7 @@ namespace Lithium.Modules.Customers.BonusPayments
                 float pctForThisItem = (pctMax > pctMin) ? UnityEngine.Random.Range(pctMin, pctMax) : pctMin;
 
                 float fixedPart = fixedPerUnit * quantity;
-                float deliveryShare = quantity / (float)totalUnits; // in [0,1]
+                float deliveryShare = quantity / (float)totalUnits;
                 float percentPart = contract.Payment * (pctForThisItem / 100f) * deliveryShare;
 
                 float itemBonus = fixedPart + percentPart;

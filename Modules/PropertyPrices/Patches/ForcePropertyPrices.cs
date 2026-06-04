@@ -29,9 +29,6 @@ namespace Lithium.Modules.PropertyPrices.Patches
             {
                 if (!configuration.PropertyPrices.TryGetValue(prop.PropertyName, out int price))
                 {
-                    // Unknown property (e.g. one added by a game update): seed the config with its live
-                    // price so it shows up in PropertyPrices.json for editing instead of being ignored.
-                    // PatchPrices re-saves the config after this, persisting the new entry.
                     price = (int)prop.Price;
                     configuration.PropertyPrices[prop.PropertyName] = price;
                     Log.Info($"Property {prop.PropertyName} not in configuration; added at live price {price}.");

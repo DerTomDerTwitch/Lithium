@@ -21,8 +21,6 @@ namespace Lithium.Modules.Customers.Patches
 
             config.Deliveries ??= new Dictionary<string, DeliverySettings>();
 
-            // Add an entry for every delivery shop we don't already track. Fills the default (empty)
-            // config and picks up shops added by later game patches, without clobbering user edits.
             bool added = false;
             foreach (DeliveryShop d in DeliveryApp.Instance.deliveryShops.ToList())
             {
