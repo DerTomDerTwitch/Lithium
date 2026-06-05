@@ -20,6 +20,15 @@ namespace Lithium.Modules.Dealers
         [JsonProperty(Order = 1)] public bool Enabled = true;
     }
 
+    public class WeaponLossConfiguration
+    {
+        [JsonProperty(Order = 1)] public bool Enabled = true;
+
+        // Per-day probability that a dealer loses or damages their weapon and needs a replacement.
+        // Default ~1/14 -> roughly once every two weeks.
+        [JsonProperty(Order = 2)] public float ChancePerDay = 1f / 14f;
+    }
+
     public class ShortageConfiguration
     {
         [JsonProperty(Order = 1)] public bool Enabled = true;
@@ -38,13 +47,16 @@ namespace Lithium.Modules.Dealers
 
         [JsonProperty(Order = 1)] public RobberyConfiguration Robbery = new();
         [JsonProperty(Order = 2)] public WeaponAlertConfiguration WeaponAlerts = new();
-        [JsonProperty(Order = 3)] public ShortageConfiguration Shortage = new();
-        [JsonProperty(Order = 4)] public WeeklyReportConfiguration WeeklyReport = new();
+        [JsonProperty(Order = 3)] public WeaponLossConfiguration WeaponLoss = new();
+        [JsonProperty(Order = 4)] public ShortageConfiguration Shortage = new();
+        [JsonProperty(Order = 5)] public WeeklyReportConfiguration WeeklyReport = new();
 
         public override void Validate()
         {
             if (Robbery.OutdatedWeaponImmunityChance < 0f) Robbery.OutdatedWeaponImmunityChance = 0f;
             if (Robbery.OutdatedWeaponImmunityChance > 1f) Robbery.OutdatedWeaponImmunityChance = 1f;
+            if (WeaponLoss.ChancePerDay < 0f) WeaponLoss.ChancePerDay = 0f;
+            if (WeaponLoss.ChancePerDay > 1f) WeaponLoss.ChancePerDay = 1f;
             if (Shortage.LeadHours < 1) Shortage.LeadHours = 1;
         }
     }
@@ -148,22 +160,52 @@ namespace Lithium.Modules.Dealers
 
         private void OnDayPass()
         {
-            if (!Configuration.WeaponAlerts.Enabled)
+            bool lossOn = Configuration.WeaponLoss.Enabled && Configuration.WeaponLoss.ChancePerDay > 0f;
+            bool alertsOn = Configuration.WeaponAlerts.Enabled;
+            if (!lossOn && !alertsOn)
                 return;
 
             foreach (Dealer dealer in RecruitedDealers())
             {
-                switch (DealerWeaponInspector.Classify(dealer))
-                {
-                    case WeaponStatus.None:
-                        DealerMessenger.Send(dealer,
-                            "I've got nothing to defend myself with - if the cartel hits me they'll clean me out. Put a weapon in my inventory.");
-                        break;
-                    case WeaponStatus.Outdated:
-                        DealerMessenger.Send(dealer,
-                            "My weapon's getting old - there's better available at your rank now. Swap it out or I'm only half-safe if I get jumped.");
-                        break;
-                }
+                // A weapon lost today stands in for the regular alert - skip the alert so the dealer
+                // doesn't also text "I've got nothing" in the same day.
+                if (lossOn && TryWeaponLoss(dealer))
+                    continue;
+
+                if (alertsOn)
+                    SendWeaponAlert(dealer);
+            }
+        }
+
+        private bool TryWeaponLoss(Dealer dealer)
+        {
+            if (UnityEngine.Random.value >= Configuration.WeaponLoss.ChancePerDay)
+                return false;
+
+            string lost = DealerWeaponInspector.RemoveBestWeapon(dealer);
+            if (lost == null)
+                return false; // nothing to lose - they were already unarmed
+
+            string message = UnityEngine.Random.value < 0.5f
+                ? $"Bad news - I lost my {lost} during a run and couldn't find it. I need a replacement weapon or I'm a sitting duck."
+                : $"My {lost} jammed and broke on me - it's useless now. Get me a new weapon before I get jumped.";
+            DealerMessenger.Send(dealer, message);
+            Log.Info($"[Dealers] {dealer.fullName} lost their {lost}.");
+            return true;
+        }
+
+        private static void SendWeaponAlert(Dealer dealer)
+        {
+            switch (DealerWeaponInspector.Classify(dealer))
+            {
+                case WeaponStatus.None:
+                    DealerMessenger.Send(dealer,
+                        "I've got nothing to defend myself with - if the cartel hits me they'll clean me out. Put a weapon in my inventory.");
+                    break;
+                case WeaponStatus.Outdated:
+                    DealerMessenger.Send(dealer,
+                        "My weapon's getting old - there's better available at your rank now. Swap it out or I'm only half-safe if I get jumped.");
+                    break;
             }
         }
 

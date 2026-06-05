@@ -10,6 +10,7 @@ using Lithium.Modules.Customers;
 using Lithium.Modules.Dealers;
 using Lithium.Modules.DryingRacks;
 using Lithium.Modules.EffectCombos;
+using Lithium.Modules.ElectricBill;
 using Lithium.Modules.Employees;
 using Lithium.Modules.EndOfDayFreeze;
 using Lithium.Modules.LabOven;
@@ -58,6 +59,7 @@ namespace Lithium
             new ModEndOfDayFreeze(),
             new ModProductTooltips(),
             new ModBanking(),
+            new ModElectricBill(),
             new ModRent(),
             new ModBrickPress(),
             new ModDealers(),
@@ -162,6 +164,11 @@ namespace Lithium
                     ReloadConfiguration();
                 else
                     RentDebug.Dump();
+            }
+
+            if (Input.GetKeyDown(KeyCode.F9))
+            {
+                BuildablesDebug.Dump();
             }
 
             if (!Log.DebugEnabled)

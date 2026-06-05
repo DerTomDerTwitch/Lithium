@@ -33,6 +33,42 @@ namespace Lithium.Modules.Dealers.Architecture
 
         public static bool NeedsAttention(Dealer dealer) => Classify(dealer) != WeaponStatus.Adequate;
 
+        // Removes the dealer's best (highest-rank) held weapon from their inventory and returns its
+        // display name. Returns null if the dealer holds no weapon.
+        public static string RemoveBestWeapon(Dealer dealer)
+        {
+            if (dealer == null)
+                return null;
+
+            Il2CppSystem.Collections.Generic.List<ItemSlot> slots = dealer.GetAllSlots();
+            if (slots == null)
+                return null;
+
+            ItemSlot bestSlot = null;
+            StorableItemDefinition bestWeapon = null;
+            float bestRank = 0f;
+            foreach (ItemSlot slot in slots)
+            {
+                StorableItemDefinition weapon = AsWeapon(slot?.ItemInstance?.Definition);
+                if (weapon == null)
+                    continue;
+                float r = RankFloat(weapon);
+                if (bestSlot == null || r > bestRank)
+                {
+                    bestSlot = slot;
+                    bestWeapon = weapon;
+                    bestRank = r;
+                }
+            }
+
+            if (bestSlot == null)
+                return null;
+
+            string name = bestWeapon.Name;
+            bestSlot.ClearStoredInstance();
+            return name;
+        }
+
         private static float? BestHeldWeaponRank(Dealer dealer)
         {
             Il2CppSystem.Collections.Generic.List<ItemSlot> slots = dealer.GetAllSlots();
