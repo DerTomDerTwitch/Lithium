@@ -529,6 +529,9 @@
 		<Compile Include="Modules\Dealers\Patches\DealerTickPatch.cs" />
 		<Compile Include="Modules\Dealers\Patches\DealerRobberyPatch.cs" />
 		<Compile Include="Modules\Dealers\Patches\DealerSaleTrackingPatch.cs" />
+		<Compile Include="Modules\Repairs\ModRepairs.cs" />
+		<Compile Include="Modules\Repairs\Patches\AtmSendBreakPatch.cs" />
+		<Compile Include="Modules\Repairs\Patches\VendingMachineSendBreakPatch.cs" />
 		<Compile Include="Modules\Customers\Architecture\BonusPaymentHandler.cs" />
 		<Compile Include="Modules\Customers\Architecture\ContractRetryTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\OrderPatternProfile.cs" />

@@ -18,6 +18,7 @@ using Lithium.Modules.PlantGrowth;
 using Lithium.Modules.ProductTooltips;
 using Lithium.Modules.PropertyPrices;
 using Lithium.Modules.Rent;
+using Lithium.Modules.Repairs;
 using Lithium.Modules.Shops;
 using Lithium.Modules.StackSizes;
 using Lithium.Modules.Storyline;
@@ -57,7 +58,8 @@ namespace Lithium
             new ModBanking(),
             new ModRent(),
             new ModBrickPress(),
-            new ModDealers()
+            new ModDealers(),
+            new ModRepairs()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
