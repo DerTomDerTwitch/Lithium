@@ -155,26 +155,35 @@ namespace Lithium
         {
             base.OnUpdate();
 
+            LithiumConfig config = LithiumConfig.Instance;
+
             if (Input.GetKeyDown(KeyCode.F8))
             {
                 bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
                 bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
                 if (ctrl && shift)
-                    ReloadConfiguration();
-                else
+                {
+                    if (config.HotkeyCtrlShiftF8ReloadConfig)
+                        ReloadConfiguration();
+                }
+                else if (config.HotkeyF8RentDump)
+                {
                     RentDebug.Dump();
+                }
             }
 
-            if (Input.GetKeyDown(KeyCode.F9))
+            if (config.HotkeyF9BuildablesDump && Input.GetKeyDown(KeyCode.F9))
             {
                 BuildablesDebug.Dump();
             }
 
-            if (!Log.DebugEnabled)
-                return;
+            if (config.HotkeyF10RVFurnitureDump && Input.GetKeyDown(KeyCode.F10))
+            {
+                RVFurnitureDebug.Dump();
+            }
 
-            if (Input.GetKeyDown(KeyCode.F5))
+            if (config.HotkeyF5ExpandVeeperStorage && Input.GetKeyDown(KeyCode.F5))
             {
                 LandVehicle[] array2 = VehicleManager.Instance.AllVehicles.ToArray()
                     .Where(v => v.IsPlayerOwned)
@@ -185,17 +194,17 @@ namespace Lithium
                     vehicle.Storage.SlotCount = 20;
                     for (int i = vehicle.Storage.ItemSlots.Count; i <= vehicle.Storage.SlotCount; i++)
                     {
-                        vehicle.Storage.ItemSlots.Add(new());                        
+                        vehicle.Storage.ItemSlots.Add(new());
                     }
                 }
             }
 
-            if (Input.GetKeyDown(KeyCode.F6))
+            if (config.HotkeyF6OrderPatternDump && Input.GetKeyDown(KeyCode.F6))
             {
                 OrderPatternDebug.Dump();
             }
 
-            if (Input.GetKeyDown(KeyCode.F7))
+            if (config.HotkeyF7NpcRosterDump && Input.GetKeyDown(KeyCode.F7))
             {
                 NpcRosterDebug.Dump();
             }
