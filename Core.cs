@@ -25,6 +25,7 @@ using Lithium.Modules.Storyline;
 using Lithium.Modules.TrashGrabber;
 using Lithium.Modules.Vehicles;
 using Lithium.Modules.WateringCans;
+using Lithium.Modules.Weapons;
 using MelonLoader;
 using UnityEngine;
 
@@ -59,7 +60,8 @@ namespace Lithium
             new ModRent(),
             new ModBrickPress(),
             new ModDealers(),
-            new ModRepairs()
+            new ModRepairs(),
+            new ModWeapons()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
