@@ -31,7 +31,7 @@ using Lithium.Modules.Weapons;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Lithium.Core), "Lithium", "1.0.7", "DerTomDer & YukiSora", null)]
+[assembly: MelonInfo(typeof(Lithium.Core), "Lithium", "1.3.0", "DerTomDer & YukiSora", null)]
 [assembly: MelonGame("TVGS", "Schedule I")]
 [assembly: MelonPlatformDomain(MelonPlatformDomainAttribute.CompatibleDomains.IL2CPP)]
                                                                               
