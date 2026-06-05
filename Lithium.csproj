@@ -537,6 +537,9 @@
 		<Compile Include="Modules\Weapons\WeaponPawnValue.cs" />
 		<Compile Include="Modules\Weapons\Patches\RegistryStartPatch.cs" />
 		<Compile Include="Modules\Weapons\Patches\PickpocketBlockWeaponsPatch.cs" />
+		<Compile Include="Modules\Warehouse\ModWarehouse.cs" />
+		<Compile Include="Modules\Warehouse\Patches\DarkMarketShouldBeOpenPatch.cs" />
+		<Compile Include="Modules\Warehouse\Patches\DarkMarketAccessZoneGetIsOpenPatch.cs" />
 		<Compile Include="Modules\Customers\Architecture\BonusPaymentHandler.cs" />
 		<Compile Include="Modules\Customers\Architecture\ContractRetryTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\OrderPatternProfile.cs" />

@@ -24,6 +24,7 @@ using Lithium.Modules.StackSizes;
 using Lithium.Modules.Storyline;
 using Lithium.Modules.TrashGrabber;
 using Lithium.Modules.Vehicles;
+using Lithium.Modules.Warehouse;
 using Lithium.Modules.WateringCans;
 using Lithium.Modules.Weapons;
 using MelonLoader;
@@ -61,7 +62,8 @@ namespace Lithium
             new ModBrickPress(),
             new ModDealers(),
             new ModRepairs(),
-            new ModWeapons()
+            new ModWeapons(),
+            new ModWarehouse()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
