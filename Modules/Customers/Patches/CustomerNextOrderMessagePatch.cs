@@ -46,7 +46,7 @@ namespace Lithium.Modules.Customers.Patches
             _lastAnnouncedMinSum[customerName] = nowMinSum;
 
             if (!config.OrderPatterns.Enabled ||
-                LevelManager.Instance == null || LevelManager.Instance.TotalXP < config.Contracts.XPRequired)
+                LevelManager.Instance == null || !config.OrderPatterns.RankMet())
                 return;
 
             OrderPatternProfile profile = OrderPatternProfile.Create(

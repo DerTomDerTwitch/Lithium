@@ -36,7 +36,7 @@ namespace Lithium.Modules.Customers.Patches
                 return;
 
             if (!config.OrderPatterns.Enabled || LevelManager.Instance == null ||
-                LevelManager.Instance.TotalXP < config.Contracts.XPRequired)
+                !config.OrderPatterns.RankMet())
                 return;
 
             if (__instance == null || __instance.CustomerData == null ||

@@ -17,7 +17,7 @@ namespace Lithium.Modules.Customers.Patches
             if (!config.Enabled || !config.Contracts.Enabled)
                 return;
 
-            if (config.OrderPatterns.Enabled && LevelManager.Instance.TotalXP >= config.Contracts.XPRequired)
+            if (config.OrderPatterns.Enabled && config.OrderPatterns.RankMet())
             {
                 OrderPatternProfile profile = OrderPatternProfile.Create(
                     __instance.name, __instance.MinOrdersPerWeek, __instance.MaxOrdersPerWeek);

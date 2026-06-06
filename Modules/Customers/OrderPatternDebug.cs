@@ -24,10 +24,13 @@ namespace Lithium.Modules.Customers
                 sb.AppendLine($"OrderPatterns.Enabled     : {config.OrderPatterns.Enabled}");
 
                 int totalXp = LevelManager.Instance != null ? LevelManager.Instance.TotalXP : -1;
-                sb.AppendLine($"XP (current / required)   : {totalXp} / {config.Contracts.XPRequired}");
+                string currentRank = LevelManager.Instance != null ? LevelManager.Instance.GetFullRank().ToString() : "<none>";
+                string requiredRank = new FullRank(config.OrderPatterns.MinRank, Math.Clamp(config.OrderPatterns.MinRankTier, 1, 5)).ToString();
+                sb.AppendLine($"Total XP (current)        : {totalXp}");
+                sb.AppendLine($"Rank (current / required) : {currentRank} / {requiredRank}");
 
                 bool patternsActive = config.Enabled && config.Contracts.Enabled && config.OrderPatterns.Enabled
-                    && totalXp >= config.Contracts.XPRequired;
+                    && config.OrderPatterns.RankMet();
                 sb.AppendLine($"Patterns ACTIVE in-game   : {patternsActive}{(patternsActive ? "" : "  (profiles below are still shown for inspection)")}");
 
                 EDay currentDay = TimeManager.Instance != null ? TimeManager.Instance.CurrentDay : default;

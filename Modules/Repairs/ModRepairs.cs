@@ -19,10 +19,13 @@ namespace Lithium.Modules.Repairs
 
     /// <summary>
     /// Prolongs the repair period of destructible ATMs and cuke vending machines.
-    /// On break the game runs <c>RpcLogic___SendBreak</c> which seeds <c>DaysUntilRepair = 0</c>;
-    /// <c>DayPass</c> then decrements it once per night and repairs at <c>&lt;= 0</c> — so vanilla
-    /// repairs after the first sleep. We overwrite that seed with <c>RepairDays</c> in a postfix
-    /// (see Patches/); <c>RepairDays = 1</c> reproduces vanilla, higher values add extra nights.
+    /// On break the game seeds <c>DaysUntilRepair = 0</c> and <c>DayPass</c> then decrements it once per
+    /// night, repairing at <c>&lt;= 0</c> — so vanilla repairs after the first sleep. We reimplement
+    /// <c>DayPass</c> in a prefix (see Patches/) as an up-counter: while broken, <c>DaysUntilRepair</c>
+    /// counts the nights since the break and we repair once it reaches <c>RepairDays</c>
+    /// (<c>1</c> reproduces vanilla, higher values add extra nights). We patch <c>DayPass</c> rather
+    /// than the break because it is delegate-bound (un-inlinable, so reliably patchable in IL2CPP) and
+    /// because reusing the field the game already persists lets an in-progress window survive save/load.
     /// </summary>
     public class ModRepairs : ModuleBase<ModRepairsConfiguration>
     {

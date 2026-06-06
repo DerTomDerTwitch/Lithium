@@ -21,6 +21,15 @@ namespace Lithium.Modules.Customers.Patches
             if (!config.Enabled || !config.SampleOffering.Enabled)
                 return true;
 
+            // Only override sample acceptance once the player reaches the configured rank. Below it
+            // (e.g. before a Mixing Station can craft matching effects), defer to the game's own
+            // GetSampleSuccess so early-game samples aren't penalised by the Lithium calculation.
+            if (!config.SampleOffering.RankMet())
+            {
+                Log.Info("Sample offering: below configured rank - using vanilla acceptance calculation.");
+                return true;
+            }
+
             float sum = 0;
             
             foreach (ItemInstance item in items)

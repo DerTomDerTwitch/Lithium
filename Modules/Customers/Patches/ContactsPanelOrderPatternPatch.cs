@@ -24,7 +24,7 @@ namespace Lithium.Modules.Customers.Patches
             if (!config.OrderPatterns.ShowPatternInContactPanel)
                 return;
 
-            if (LevelManager.Instance == null || LevelManager.Instance.TotalXP < config.Contracts.XPRequired)
+            if (!config.OrderPatterns.RankMet())
                 return;
 
             if (__instance.PropertiesLabel == null || __instance.PropertiesContainer == null)

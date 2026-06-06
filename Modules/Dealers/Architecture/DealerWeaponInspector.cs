@@ -4,6 +4,7 @@ using Il2CppScheduleOne.Core.Items.Framework;
 using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.Levelling;
+using Lithium.Helper;
 
 namespace Lithium.Modules.Dealers.Architecture
 {
@@ -94,11 +95,8 @@ namespace Lithium.Modules.Dealers.Architecture
             if (_weaponRankLadder == null || _weaponRankLadder.Count == 0)
                 return 0f;
 
-            LevelManager lvl = LevelManager.Instance;
-            if (lvl == null)
-                return 0f;
-
-            float playerRank = lvl.GetFullRank().ToFloat();
+            // null LevelManager → fallback 0f, which yields a best of 0 below (vanilla behaviour).
+            float playerRank = RankHelper.PlayerRankFloat(0f);
             float best = 0f;
             foreach (float r in _weaponRankLadder)
                 if (r <= playerRank && r > best)

@@ -491,6 +491,7 @@
 		<Compile Include="Helper\CollectionConverter.cs" />
 		<Compile Include="Helper\ConfigValidator.cs" />
 		<Compile Include="Helper\ProductHelper.cs" />
+		<Compile Include="Helper\RankHelper.cs" />
 		<Compile Include="Helper\StableHash.cs" />
 		<Compile Include="Helper\StringExtensions.cs" />
 		<Compile Include="Helper\RandomExtensions.cs" />
@@ -530,8 +531,8 @@
 		<Compile Include="Modules\Dealers\Patches\DealerRobberyPatch.cs" />
 		<Compile Include="Modules\Dealers\Patches\DealerSaleTrackingPatch.cs" />
 		<Compile Include="Modules\Repairs\ModRepairs.cs" />
-		<Compile Include="Modules\Repairs\Patches\AtmSendBreakPatch.cs" />
-		<Compile Include="Modules\Repairs\Patches\VendingMachineSendBreakPatch.cs" />
+		<Compile Include="Modules\Repairs\Patches\AtmDayPassPatch.cs" />
+		<Compile Include="Modules\Repairs\Patches\VendingMachineDayPassPatch.cs" />
 		<Compile Include="Modules\Weapons\ModWeapons.cs" />
 		<Compile Include="Modules\Weapons\WeaponMatcher.cs" />
 		<Compile Include="Modules\Weapons\WeaponPawnValue.cs" />
@@ -540,6 +541,7 @@
 		<Compile Include="Modules\Warehouse\ModWarehouse.cs" />
 		<Compile Include="Modules\Warehouse\Patches\DarkMarketShouldBeOpenPatch.cs" />
 		<Compile Include="Modules\Warehouse\Patches\DarkMarketAccessZoneGetIsOpenPatch.cs" />
+		<Compile Include="Modules\Warehouse\Patches\DarkMarketInteriorAccessPatch.cs" />
 		<Compile Include="Modules\Customers\Architecture\BonusPaymentHandler.cs" />
 		<Compile Include="Modules\Customers\Architecture\ContractRetryTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\OrderPatternProfile.cs" />
@@ -563,6 +565,8 @@
 		<Compile Include="Modules\Customers\Patches\CustomerContractRejectedPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerExpireOfferPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerExpireOfferGuardPatch.cs" />
+		<Compile Include="Modules\Customers\Patches\CustomerUpdateOfferExpiryPatch.cs" />
+		<Compile Include="Modules\Customers\Patches\CustomerMinPassOfferExpiryPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerSleepOfferGuardPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerLoadOfferDeadlinePatch.cs" />
 		<Compile Include="Modules\Customers\Patches\ContactsPanelOrderPatternPatch.cs" />

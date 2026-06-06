@@ -6,6 +6,7 @@ using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.Messaging;
 using Il2CppScheduleOne.NPCs;
+using Il2CppScheduleOne.Persistence;
 using Il2CppScheduleOne.Property;
 using Il2CppScheduleOne.Storage;
 using Lithium.Helper;
@@ -78,9 +79,12 @@ namespace Lithium.Modules.Rent
 
         private static readonly HashSet<string> LockedCodes = new();
 
-        private readonly HashSet<string> _establishedAtLoad = new();
-        private bool _establishedCaptured;
+        // Sentinel key written into the per-save store the first time the mod ever runs on a save. Its presence
+        // means the established-vs-fresh baseline has already been decided and persisted. Not a real property
+        // code, and the store is only ever iterated by property code, so it never collides with a location.
+        private const string BaselineKey = "__lithium_rent_baseline__";
 
+        private bool _baselineReady;
         private int _lastElapsedDay = -1;
         private bool _initialised;
 
@@ -93,8 +97,7 @@ namespace Lithium.Modules.Rent
 
             Store.Unload();
             LockedCodes.Clear();
-            _establishedAtLoad.Clear();
-            _establishedCaptured = false;
+            _baselineReady = false;
             _lastElapsedDay = -1;
             _initialised = false;
 
@@ -133,23 +136,95 @@ namespace Lithium.Modules.Rent
             if (time == null)
                 return;
 
+            // Don't touch rent state until the save is fully loaded and the per-save baseline has been written.
+            // EnsureBaseline decides — exactly once per save, persisted to disk — which properties pre-existed
+            // (billed immediately) versus which are fresh purchases (grace). Until it succeeds, the owned-property
+            // list may be incomplete and any decision we made would be wrong.
+            if (!EnsureBaseline())
+                return;
+
             int today = time.ElapsedDays;
 
             if (!_initialised)
             {
                 DiscoverLocations();
-                CaptureEstablishedAtLoad();
                 RebuildLockedFromState();
                 _lastElapsedDay = today;
                 _initialised = true;
-                return;
             }
+
+            // Anchor any property acquired during play immediately, so its "freshly bought" grace status is
+            // persisted before a save/reload (or Alt+F4) can happen.
+            AnchorNewLocations(today);
 
             if (today == _lastElapsedDay)
                 return;
 
             _lastElapsedDay = today;
             ProcessDay(today);
+        }
+
+        // Establishes — once per save, persisted — the rent baseline. The first time the mod ever runs on a save,
+        // every property already owned is "pre-existing" and billed immediately; that decision is recorded by
+        // writing each property's state plus a sentinel key. On every later load the sentinel is already present,
+        // so we skip straight to ready — which means any owned property that still lacks state is necessarily a
+        // fresh purchase (grace), never a pre-existing one. This is what makes a freshly-bought property survive
+        // a reload/Alt+F4 without being billed on the spot. Gated on LoadManager reporting a fully loaded save so
+        // the owned-property list is populated before we snapshot it. Returns true once the baseline exists.
+        private bool EnsureBaseline()
+        {
+            if (_baselineReady)
+                return true;
+
+            LoadManager lm = LoadManager.Instance;
+            if (lm == null || !lm.IsGameLoaded || lm.IsLoading || lm.LoadStatus != LoadManager.ELoadStatus.None)
+                return false;
+
+            if (!Store.TryGet(BaselineKey, out _))
+            {
+                int today = TimeManager.Instance?.ElapsedDays ?? 0;
+                int established = 0;
+                foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
+                {
+                    string code = prop.PropertyCode;
+                    if (string.IsNullOrEmpty(code) || Store.TryGet(code, out _))
+                        continue;
+
+                    RentLocationState state = new RentLocationState();
+                    ApplyDueCharges(state, loc, today, establishedAtLoad: true);
+                    Store.Set(code, state);
+                    established++;
+                }
+
+                Store.Set(BaselineKey, new RentLocationState());
+                Log.Info($"[Rent] Rent baseline established ({established} pre-existing location(s) billed).");
+            }
+
+            _baselineReady = true;
+            return true;
+        }
+
+        // Persists a fresh-purchase anchor for any enabled, owned location that has no state yet. Because the
+        // established-vs-fresh decision is made once at baseline (EnsureBaseline) and persisted, any owned
+        // location still lacking state afterwards must be a property acquired since — i.e. a fresh purchase that
+        // gets the grace window, never an immediate charge. Writing the anchor here on every tick means even an
+        // Alt+F4 right after buying can't make the property look pre-existing on reload (it already has state;
+        // and if the tick was missed, the persisted baseline still classifies it as fresh). No money is taken.
+        private void AnchorNewLocations(int today)
+        {
+            foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
+            {
+                string code = prop.PropertyCode;
+                if (string.IsNullOrEmpty(code))
+                    continue;
+                if (Store.TryGet(code, out _))
+                    continue;
+
+                RentLocationState state = new RentLocationState();
+                ApplyDueCharges(state, loc, today, establishedAtLoad: false);
+                Store.Set(code, state);
+                Log.Info($"[Rent] Anchored freshly acquired '{prop.PropertyName}' at day {today}; grace applies.");
+            }
         }
 
         private void ProcessDay(int today)
@@ -169,7 +244,7 @@ namespace Lithium.Modules.Rent
                     continue;
                 }
 
-                bool charged = ApplyDueCharges(state, loc, today, _establishedAtLoad.Contains(code));
+                bool charged = ApplyDueCharges(state, loc, today, establishedAtLoad: false);
 
                 bool messaged = false;
 
@@ -244,9 +319,11 @@ namespace Lithium.Modules.Rent
             TimeManager time = TimeManager.Instance;
             if (time == null)
                 return;
-            int today = time.ElapsedDays;
 
-            CaptureEstablishedAtLoad();
+            if (!EnsureBaseline())
+                return;
+
+            int today = time.ElapsedDays;
 
             int sent = 0;
             foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
@@ -255,7 +332,7 @@ namespace Lithium.Modules.Rent
                 RentLocationState state = Store.TryGet(code, out RentLocationState s) ? s : new RentLocationState();
 
                 if (!state.LockedOut)
-                    ApplyDueCharges(state, loc, today, _establishedAtLoad.Contains(code));
+                    ApplyDueCharges(state, loc, today, establishedAtLoad: false);
 
                 Store.Set(code, state);
 
@@ -401,26 +478,6 @@ namespace Lithium.Modules.Rent
             catch (Exception e)
             {
                 Log.Warning($"[Rent] Failed to rebuild locked set: {e.Message}");
-            }
-        }
-
-        private void CaptureEstablishedAtLoad()
-        {
-            if (_establishedCaptured)
-                return;
-            try
-            {
-                _establishedAtLoad.Clear();
-                foreach (Property prop in AllOwned())
-                {
-                    if (!string.IsNullOrEmpty(prop.PropertyCode))
-                        _establishedAtLoad.Add(prop.PropertyCode);
-                }
-                _establishedCaptured = true;
-            }
-            catch (Exception e)
-            {
-                Log.Warning($"[Rent] Failed to capture established locations: {e.Message}");
             }
         }
 

@@ -1,10 +1,13 @@
 ﻿using System.Collections;
 using Il2CppInterop.Runtime.Injection;
+using Il2CppScheduleOne.Levelling;
 using Lithium.Helper;
 using Lithium.Modules.Customers.Architecture;
 using Lithium.Modules.Customers.Behaviours;
 using Lithium.Modules.Customers.BonusPayments;
 using MelonLoader;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using UnityEngine;
 
 namespace Lithium.Modules.Customers
@@ -37,8 +40,34 @@ namespace Lithium.Modules.Customers
         public bool IncludeDrugPreference { get; set; } = true;
         public float BaseAcceptance { get; set; } = 0.0f;
         public bool RequireEffectMatch { get; set; } = true;
+
+        /// <summary>
+        /// Below this rank, the entire Lithium sample-acceptance override is skipped and the game's
+        /// own <c>GetSampleSuccess</c> calculation is used instead. This protects early-game players
+        /// who cannot yet craft matching effects (e.g. before owning a Mixing Station). Combined
+        /// with <see cref="MinRankTier"/> (e.g. Hoodlum + tier 2 = "Hoodlum II"). Defaults to
+        /// Street_Rat I so the gate is met from the very start and the Lithium calculation applies
+        /// immediately (unchanged behaviour).
+        /// </summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public ERank MinRank { get; set; } = ERank.Street_Rat;
+
+        /// <summary>
+        /// The tier (I–V, i.e. 1–5) within <see cref="MinRank"/> at which the Lithium sample
+        /// calculation starts being applied.
+        /// </summary>
+        public int MinRankTier { get; set; } = 1;
+
         public int MaxQualityOverDeliveryLevels { get; set; } = 1;
         public float DrugAffinitySharpness { get; set; } = 0.5f;
+
+        /// <summary>
+        /// True when the local player's rank is at or above the configured <see cref="MinRank"/> /
+        /// <see cref="MinRankTier"/>. Returns true when the level manager is unavailable so the
+        /// Lithium calculation is applied by default. Uses <see cref="FullRank.ToFloat"/> for
+        /// comparison (matching the codebase convention).
+        /// </summary>
+        public bool RankMet() => RankHelper.PlayerRankAtLeast(MinRank, MinRankTier);
     }
 
     public class DirectSales
@@ -168,6 +197,30 @@ namespace Lithium.Modules.Customers
 
         public bool ShowPatternInContactPanel { get; set; } = true;
 
+        /// <summary>
+        /// Below this rank, order-pattern reshaping (and its coupled bulk-reward scaling,
+        /// next-order texts and contact-panel cadence line) stays off and customers keep their
+        /// vanilla ordering days. Independent of <c>Contracts.XPRequired</c> so cadence reshaping
+        /// can switch on earlier than the contract system. Combined with <see cref="MinRankTier"/>
+        /// (e.g. Street_Rat + tier 3 = "Street Rat III"). Defaults to Street_Rat III.
+        /// </summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public ERank MinRank { get; set; } = ERank.Street_Rat;
+
+        /// <summary>
+        /// The tier (I–V, i.e. 1–5) within <see cref="MinRank"/> at which order-pattern reshaping
+        /// starts being applied.
+        /// </summary>
+        public int MinRankTier { get; set; } = 3;
+
+        /// <summary>
+        /// True when the local player's rank is at or above the configured <see cref="MinRank"/> /
+        /// <see cref="MinRankTier"/>. Returns true when the level manager is unavailable so the
+        /// reshaping is applied by default. Uses <see cref="FullRank.ToFloat"/> for comparison
+        /// (matching the codebase convention).
+        /// </summary>
+        public bool RankMet() => RankHelper.PlayerRankAtLeast(MinRank, MinRankTier);
+
         public string[] NextOrderTemplates { get; set; } =
         [
             "Thanks, good doing business! I'll hit you up again ##DAY##.",
@@ -223,6 +276,12 @@ namespace Lithium.Modules.Customers
 
         public override void Validate()
         {
+            SampleOffering.MinRankTier = ConfigValidator.InRange(
+                Name, "SampleOffering.MinRankTier", SampleOffering.MinRankTier, 1, 5);
+
+            OrderPatterns.MinRankTier = ConfigValidator.InRange(
+                Name, "OrderPatterns.MinRankTier", OrderPatterns.MinRankTier, 1, 5);
+
             Contracts.ProductSelection.CoverageBiasExponent = ConfigValidator.AtLeast(
                 Name, "Contracts.ProductSelection.CoverageBiasExponent", Contracts.ProductSelection.CoverageBiasExponent, 0f);
             Contracts.ProductSelection.DrugTypeBiasExponent = ConfigValidator.AtLeast(
