@@ -498,7 +498,7 @@
 		<Compile Include="Modules\BrickPress\ModBrickPress.cs" />
 		<Compile Include="Modules\BrickPress\Patches\BrickPressBeginButtonPatch.cs" />
 		<Compile Include="Modules\ChemistryStation\ModChemistryStation.cs" />
-		<Compile Include="Modules\ChemistryStation\Patches\ChemistryCookOperationProgressPatch.cs" />
+		<Compile Include="Modules\ChemistryStation\Patches\ChemistryStationSpeedPatch.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\ModEndOfDayFreeze.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\EndOfDayGate.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\Patches\DryingRackFreezePatch.cs" />
@@ -507,13 +507,16 @@
 		<Compile Include="Modules\EndOfDayFreeze\Patches\MixingStationFreezePatch.cs" />
 		<Compile Include="Modules\Banking\ModBanking.cs" />
 		<Compile Include="Modules\Banking\BankingContact.cs" />
-		<Compile Include="Modules\Banking\Patches\AtmDepositLimitPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\CleanCashQuestTriggerPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\AtmDepositDisplayPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\AtmAvailableAmountsPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\AtmRemainingDepositPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\AtmDayPassPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\AtmTransactionPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\LaunderCapacityPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\LaunderSpeedPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\LaunderCutPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\LaunderCutSkipPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\BankingDailyTickPatch.cs" />
 		<Compile Include="Modules\Rent\ModRent.cs" />
 		<Compile Include="Modules\Rent\RentLocationState.cs" />
@@ -601,8 +604,7 @@
 		<Compile Include="Modules\DryingRacks\Patches\DryingOperationUIPatch.cs" />
 		<Compile Include="Modules\DryingRacks\Patches\DryingOperationPatch.cs" />
 		<Compile Include="Modules\LabOven\ModLabOven.cs" />
-		<Compile Include="Modules\LabOven\Patches\OvenCookOperationIsReadyPatch.cs" />
-		<Compile Include="Modules\LabOven\Patches\OvenCookOperationGetCookDurationPatch.cs" />
+		<Compile Include="Modules\LabOven\Patches\LabOvenSpeedPatch.cs" />
 		<Compile Include="Modules\Shops\Patches\DeliveryShopFeePatch.cs" />
 		<Compile Include="Modules\Shops\Patches\ForceUpdateShopPrices.cs" />
 		<Compile Include="Modules\Shops\Patches\SupplierStartPatch.cs" />
@@ -628,6 +630,10 @@
 		<Compile Include="Modules\Storyline\Patches\QuestWelcomeToHylandPointPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Behaviours\PlantBaseQuality.cs" />
 		<Compile Include="Modules\PlantGrowth\ModPlants.cs" />
+		<Compile Include="Modules\PhoneApp\ModPhoneApp.cs" />
+		<Compile Include="Modules\PhoneApp\LithiumPhoneApp.cs" />
+		<Compile Include="Modules\PhoneApp\PhoneAppBuilder.cs" />
+		<Compile Include="Modules\PhoneApp\PhoneAppFont.cs" />
 		<Compile Include="Modules\DryingRacks\ModDryingRacks.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\HarvestPotBehaviourYieldPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\PlantGrowthDonePatch.cs" />
@@ -650,6 +656,9 @@
 		<Compile Include="Modules\StackSizes\Patches\RegistryStartPatch.cs" />
 		<Compile Include="Modules\TrashGrabber\ModTrashGrabber.cs" />
 		<Compile Include="Modules\TrashGrabber\Patches\EquippableTrashGrabberGetCapacityPatch.cs" />
+		<Compile Include="Modules\TrashGrabber\Patches\EquippableTrashGrabberRefreshVisualsPatch.cs" />
+		<Compile Include="Modules\TrashGrabber\Patches\TrashItemInteractedPatch.cs" />
+		<Compile Include="Modules\TrashGrabber\Patches\TrashItemHoveredPatch.cs" />
 		<Compile Include="Util\SuccessChanceCalculator.cs" />
 		<Compile Include="Util\WeightedNormalizer.cs" />
 		<Compile Include="Util\WeightedPicker.cs" />

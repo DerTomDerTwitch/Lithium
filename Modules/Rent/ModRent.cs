@@ -82,7 +82,10 @@ namespace Lithium.Modules.Rent
         // Sentinel key written into the per-save store the first time the mod ever runs on a save. Its presence
         // means the established-vs-fresh baseline has already been decided and persisted. Not a real property
         // code, and the store is only ever iterated by property code, so it never collides with a location.
-        private const string BaselineKey = "__lithium_rent_baseline__";
+        // Versioned so a logic change (first-week-free baseline) can run a one-time migration on saves whose
+        // baseline was written under the old "bill pre-existing properties immediately" rule.
+        private const string BaselineKey = "__lithium_rent_baseline_v2__";
+        private const string LegacyBaselineKey = "__lithium_rent_baseline__";
 
         private bool _baselineReady;
         private int _lastElapsedDay = -1;
@@ -183,6 +186,35 @@ namespace Lithium.Modules.Rent
             if (!Store.TryGet(BaselineKey, out _))
             {
                 int today = TimeManager.Instance?.ElapsedDays ?? 0;
+
+                // One-time migration for saves whose baseline was written by the old logic, which backdated
+                // LastChargedDay and billed every pre-existing property on first sight (making them read
+                // "overdue" with no matching lockout enforcement). Re-anchor each enabled, owned property that
+                // is NOT genuinely locked out to the fresh-purchase grace anchor and clear the bogus debt,
+                // granting the intended first-week-free retroactively. A real, enforced lockout is left intact.
+                if (Store.TryGet(LegacyBaselineKey, out _))
+                {
+                    int migrated = 0;
+                    foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
+                    {
+                        string code = prop.PropertyCode;
+                        if (string.IsNullOrEmpty(code) || !Store.TryGet(code, out RentLocationState state))
+                            continue;
+                        if (state.LockedOut)
+                            continue;
+
+                        RentLocationState reset = new RentLocationState();
+                        ApplyDueCharges(reset, loc, today, establishedAtLoad: false);
+                        Store.Set(code, reset);
+                        migrated++;
+                    }
+                    Store.Remove(LegacyBaselineKey);
+                    Store.Set(BaselineKey, new RentLocationState());
+                    Log.Info($"[Rent] Migrated rent baseline to first-week-free ({migrated} location(s) re-anchored).");
+                    _baselineReady = true;
+                    return true;
+                }
+
                 int established = 0;
                 foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
                 {
@@ -191,13 +223,15 @@ namespace Lithium.Modules.Rent
                         continue;
 
                     RentLocationState state = new RentLocationState();
+                    // First-week-free: pre-existing properties are anchored like a fresh purchase (no immediate
+                    // charge); the first rent lands one interval from now.
                     ApplyDueCharges(state, loc, today, establishedAtLoad: true);
                     Store.Set(code, state);
                     established++;
                 }
 
                 Store.Set(BaselineKey, new RentLocationState());
-                Log.Info($"[Rent] Rent baseline established ({established} pre-existing location(s) billed).");
+                Log.Info($"[Rent] Rent baseline established ({established} pre-existing location(s) anchored, first week free).");
             }
 
             _baselineReady = true;
@@ -294,9 +328,14 @@ namespace Lithium.Modules.Rent
             if (state.LastChargedDay < 0)
             {
                 int interval = Configuration.RentIntervalDays;
-                state.LastChargedDay = establishedAtLoad
-                    ? today - interval
-                    : today + (Configuration.FreshPurchaseGraceDays / interval) * interval;
+                // Both pre-existing (baseline) and freshly-bought properties get a free first week: anchor the
+                // cadence at/after today so the first charge lands one full interval from now, never immediately.
+                // (Previously baseline backdated LastChargedDay by one interval and billed on first sight, which
+                // made a property read "overdue" on e.g. day 3 even though ProcessDay had never run for the
+                // backdated days to enforce a lockout — the display/enforcement mismatch the user hit.)
+                // establishedAtLoad is kept for call-site clarity but no longer changes the anchor.
+                _ = establishedAtLoad;
+                state.LastChargedDay = today + (Configuration.FreshPurchaseGraceDays / interval) * interval;
             }
 
             bool charged = false;
@@ -463,6 +502,83 @@ namespace Lithium.Modules.Rent
         {
             return !string.IsNullOrEmpty(propertyCode) && LockedCodes.Contains(propertyCode);
         }
+
+        // Read-only snapshot of a rent location for the phone app. Computed on demand from config + the
+        // per-save store; no state is mutated here.
+        public sealed class RentAppView
+        {
+            public string PropertyName;
+            public string PropertyCode;
+            public float WeeklyRent;
+            public float Owed;          // outstanding total; 0 when paid up
+            public bool Paid;           // nothing currently owed (incl. the first owned week)
+            public bool FirstWeek;      // still in the grace / first week of ownership (no rent charged yet)
+            public bool LockedOut;
+            public bool HasNextDue;     // upcoming charge known (shown while paid)
+            public int DaysUntilDue;
+            public EDay NextDueWeekday;
+            public bool HasOwedDue;     // due date of the current debt (shown while unpaid)
+            public int DaysOverdue;
+            public EDay OwedDueWeekday;
+            public string DeadDropName;
+            public string ContactName;
+        }
+
+        // One view per owned, rent-enabled location (exactly what the app dropdown lists). Empty when the
+        // module is disabled.
+        public List<RentAppView> GetAppViews()
+        {
+            List<RentAppView> views = new();
+            if (!Configuration.Enabled)
+                return views;
+
+            TimeManager time = TimeManager.Instance;
+            int today = time != null ? time.ElapsedDays : -1;
+            EDay todayDow = time != null ? time.CurrentDay : EDay.Monday;
+
+            foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
+            {
+                bool hasState = Store.TryGet(prop.PropertyCode, out RentLocationState state);
+
+                RentAppView v = new()
+                {
+                    PropertyName = prop.PropertyName,
+                    PropertyCode = prop.PropertyCode,
+                    WeeklyRent = loc.WeeklyRent,
+                    DeadDropName = string.IsNullOrEmpty(loc.DeadDropName) ? "—" : loc.DeadDropName,
+                    ContactName = string.IsNullOrEmpty(loc.ContactNpcName) ? "—" : loc.ContactNpcName,
+                    Owed = hasState ? state.Owed : 0f,
+                    LockedOut = hasState && state.LockedOut,
+                };
+
+                // First week of ownership: no rent has been charged yet (no state, or the cadence is
+                // anchored at/after today by the fresh-purchase grace). Treated as paid.
+                v.FirstWeek = !hasState || state.LastChargedDay < 0 || (today >= 0 && state.LastChargedDay >= today);
+                v.Paid = v.Owed <= 0f || v.FirstWeek;
+
+                // Upcoming charge date (while paid).
+                if (hasState && state.LastChargedDay >= 0 && today >= 0)
+                {
+                    v.DaysUntilDue = Math.Max(0, state.LastChargedDay + Configuration.RentIntervalDays - today);
+                    v.NextDueWeekday = Weekday(todayDow, v.DaysUntilDue);
+                    v.HasNextDue = true;
+                }
+
+                // Due date of the current debt (while unpaid).
+                if (hasState && v.Owed > 0f && !v.FirstWeek && state.DueSinceDay >= 0 && today >= 0)
+                {
+                    v.DaysOverdue = Math.Max(0, today - state.DueSinceDay);
+                    v.OwedDueWeekday = Weekday(todayDow, state.DueSinceDay - today);
+                    v.HasOwedDue = true;
+                }
+
+                views.Add(v);
+            }
+            return views;
+        }
+
+        private static EDay Weekday(EDay today, int dayOffset) =>
+            (EDay)((((int)today + dayOffset) % 7 + 7) % 7);
 
         private void RebuildLockedFromState()
         {

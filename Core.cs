@@ -15,6 +15,7 @@ using Lithium.Modules.Employees;
 using Lithium.Modules.EndOfDayFreeze;
 using Lithium.Modules.LabOven;
 using Lithium.Modules.MixingStations;
+using Lithium.Modules.PhoneApp;
 using Lithium.Modules.PlantGrowth;
 using Lithium.Modules.ProductTooltips;
 using Lithium.Modules.PropertyPrices;
@@ -65,7 +66,8 @@ namespace Lithium
             new ModDealers(),
             new ModRepairs(),
             new ModWeapons(),
-            new ModWarehouse()
+            new ModWarehouse(),
+            new ModPhoneApp()
         ];
 
         public static T Get<T>() where T : ModuleBase => Modules.OfType<T>().FirstOrDefault();
@@ -154,6 +156,8 @@ namespace Lithium
         public override void OnUpdate()
         {
             base.OnUpdate();
+
+            Get<ModPhoneApp>()?.DriveUpdate();
 
             LithiumConfig config = LithiumConfig.Instance;
 

@@ -1,22 +1,23 @@
 using HarmonyLib;
 using Il2CppScheduleOne.UI.ATM;
-using UnityEngine;
 
 namespace Lithium.Modules.Banking.Patches
 {
+    // `remainingAllowedDeposit` is the chokepoint that clamps the actual deposit amount
+    // (SetSelectedAmount, GetAmountFromIndex for the MAX/ALL button). Vanilla returns the
+    // inlined `10000 - WeeklyDepositSum`; we override it with the configured weekly/daily
+    // headroom so the real limit is enforced regardless of the baked-in const.
     [HarmonyPatch(typeof(ATMInterface), "remainingAllowedDeposit", MethodType.Getter)]
     public class AtmRemainingDepositPatch
     {
         [HarmonyPostfix]
         public static void Postfix(ref float __result)
         {
-            ModBankingConfiguration config = Core.Get<ModBanking>().Configuration;
-            if (!config.Enabled || !config.Atm.DailyLimited)
+            ModBanking module = Core.Get<ModBanking>();
+            if (!module.Configuration.Enabled)
                 return;
 
-            float dailyRemaining = Mathf.Max(0f, config.Atm.DailyDepositLimit - ModBanking.DailyDepositSum);
-            if (__result > dailyRemaining)
-                __result = dailyRemaining;
+            __result = module.EffectiveRemaining();
         }
     }
 }

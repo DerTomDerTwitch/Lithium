@@ -3,32 +3,33 @@ using Il2CppScheduleOne.Map;
 
 namespace Lithium.Modules.Warehouse.Patches
 {
-    // DarkMarket.ShouldBeOpen() is called every frame from Update() and drives DarkMarket.IsOpen,
-    // which controls whether the market vendor/deliveries are active. Vanilla returns false outside
-    // [AccessZone.OpenTime, AccessZone.CloseTime] OR while any player is being pursued. Once the
-    // player meets the configured rank we skip the time-of-day check, keeping only the (configurable)
-    // pursuit lockout. Below the rank requirement we run the original method unchanged.
-    [HarmonyPatch(typeof(DarkMarket), nameof(DarkMarket.ShouldBeOpen))]
+    // Keeps the Dark Market open past its vanilla hours once the player meets the configured rank.
+    //
+    // DarkMarket.IsOpen is driven solely by `IsOpen = ShouldBeOpen();` inside Update(). ShouldBeOpen is a
+    // private one-liner-caller helper that IL2CPP can inline into Update, which would bypass a patch on it.
+    // Update() is a Unity message (un-inlinable), so this postfix overrides IsOpen there after vanilla has
+    // set it: above the rank requirement it leaves vanilla untouched; at/above it, the market is forced
+    // open except (configurably) while a player is being pursued.
+    [HarmonyPatch(typeof(DarkMarket), "Update")]
     public class DarkMarketShouldBeOpenPatch
     {
-        [HarmonyPrefix]
-        public static bool Prefix(ref bool __result)
+        [HarmonyPostfix]
+        public static void Postfix(DarkMarket __instance)
         {
             ModWarehouse module = Core.Get<ModWarehouse>();
             if (module == null || !module.Configuration.Enabled)
-                return true;
+                return;
 
             if (!module.RequirementMet())
-                return true;
+                return;
 
             if (module.Configuration.CloseDuringPursuit && ModWarehouse.AnyPlayerPursued())
             {
-                __result = false;
-                return false;
+                __instance.IsOpen = false;
+                return;
             }
 
-            __result = true;
-            return false;
+            __instance.IsOpen = true;
         }
     }
 }

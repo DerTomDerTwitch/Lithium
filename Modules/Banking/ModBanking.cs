@@ -3,10 +3,12 @@ using System.Text;
 using Il2CppScheduleOne.DevUtilities;
 using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.Levelling;
+using Il2CppScheduleOne.Money;
 using Il2CppScheduleOne.Property;
 using Lithium.Helper;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using UnityEngine;
 
 namespace Lithium.Modules.Banking
 {
@@ -147,7 +149,34 @@ namespace Lithium.Modules.Banking
 
     public class ModBanking : ModuleBase<ModBankingConfiguration>
     {
+        // The game bakes its $10,000 weekly cap in as a `const` (ATM.WEEKLY_DEPOSIT_LIMIT),
+        // so it is inlined everywhere and the static field is never read. We therefore enforce
+        // and display the limit ourselves via the ATMInterface patches, using a sentinel value
+        // big enough to mean "effectively unlimited".
+        public const float Unlimited = 1_000_000_000f;
+
         public static float DailyDepositSum;
+
+        /// <summary>Cash still depositable this week under the configured weekly limit (Unlimited if off).</summary>
+        public float WeeklyRemaining()
+        {
+            AtmConfiguration atm = Configuration.Atm;
+            if (!atm.WeeklyLimited)
+                return Unlimited;
+            return Mathf.Max(0f, atm.WeeklyDepositLimit - ATM.WeeklyDepositSum);
+        }
+
+        /// <summary>Cash still depositable today under the configured daily limit (Unlimited if off).</summary>
+        public float DailyRemaining()
+        {
+            AtmConfiguration atm = Configuration.Atm;
+            if (!atm.DailyLimited)
+                return Unlimited;
+            return Mathf.Max(0f, atm.DailyDepositLimit - DailyDepositSum);
+        }
+
+        /// <summary>The binding deposit headroom right now: the tighter of the weekly and daily limits.</summary>
+        public float EffectiveRemaining() => Mathf.Min(WeeklyRemaining(), DailyRemaining());
 
         private sealed class LaunderTally
         {

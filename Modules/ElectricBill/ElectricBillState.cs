@@ -11,6 +11,11 @@ namespace Lithium.Modules.ElectricBill
         // minute). Accrues nothing while PoweredOff. Converted to kWh at billing time.
         public float AccruedWattMinutes;
 
+        // Same meter broken down per appliance id (plus the synthetic built-in-lights id), so the phone
+        // app can show the actual cost accrued by each source this billing period. Sums to
+        // AccruedWattMinutes; reset together at billing.
+        public Dictionary<string, float> AccruedByAppliance = new();
+
         // ElapsedDays of the last weekly rollover. -1 = not yet initialised (anchored on first sight).
         public int LastBilledDay = -1;
 

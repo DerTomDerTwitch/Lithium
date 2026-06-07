@@ -6,6 +6,7 @@ using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.Quests;
 using Il2CppScheduleOne.UI;
+using Lithium.Helper;
 using Lithium.Modules.Customers.Architecture;
 using UnityEngine;
 
@@ -60,10 +61,32 @@ namespace Lithium.Modules.Customers.Patches
                     return;
 
                 string name = __instance.CustomerData?.name;
-                if (!OfferDeadlineTracker.TryGet(name, out int deadlineMinSum))
-                    return; // no tracked deadline -> leave the vanilla 600-min window alone
+                if (string.IsNullOrEmpty(name))
+                    return;
 
                 int now = TimeManager.Instance.GetDateTime().GetMinSum();
+
+                if (!OfferDeadlineTracker.TryGet(name, out int deadlineMinSum))
+                {
+                    // Self-heal: CustomerOfferDeadlinePatch sets the deadline on the private
+                    // Customer.SetOfferedContract, which the native build can inline past (the same
+                    // class of bug this patch fixes for the expiry side). Establish the deadline here
+                    // from the un-inlinable OnMinPass so the extended window engages regardless of
+                    // whether that patch fired. Anchored to "now" on first sighting (OnMinPass runs
+                    // within a minute of an offer appearing); because it only runs when NO entry
+                    // exists, it never extends or re-rolls a window that is already tracked.
+                    if (contract.Products == null)
+                        return;
+
+                    int quantity = ProductHelper.GetTotalQuantity(contract.Products);
+                    if (quantity <= 0)
+                        return;
+
+                    int windowMins = OfferAcceptanceWindow.Extend(Customer.OFFER_EXPIRY_TIME_MINS, quantity, window);
+                    deadlineMinSum = now + windowMins;
+                    OfferDeadlineTracker.Set(name, deadlineMinSum);
+                    Log.Info($"[Customers] Self-healed offer deadline for {name}: +{windowMins} min (qty {quantity}).");
+                }
                 if (now < deadlineMinSum)
                 {
                     // Suppress the inlined native expiry: keep OfferedContractTime fresh so

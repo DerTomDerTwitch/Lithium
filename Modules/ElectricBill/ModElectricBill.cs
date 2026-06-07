@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Il2CppScheduleOne.DevUtilities;
 using Il2CppScheduleOne.EntityFramework;
 using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.ItemFramework;
+using Il2CppScheduleOne.Misc;
 using Il2CppScheduleOne.Money;
 using Il2CppScheduleOne.Property;
 using Lithium.Helper;
@@ -58,10 +60,16 @@ namespace Lithium.Modules.ElectricBill
             ["launderingstation"] = new(5f, 250f),
         };
 
+        // Built-in room lights — the wall-switch fixtures a property ships with (not placeable items).
+        // Each controlled light draws InUseWatts while its switch is on, StandbyWatts while off.
+        [JsonProperty(Order = 4)] public ElectricBillApplianceConfig BuiltInLight = new(0f, 40f);
+
         public override void Validate()
         {
             BillingIntervalDays = ConfigValidator.AtLeast(Name, nameof(BillingIntervalDays), BillingIntervalDays, 1);
             RatePerKwh = ConfigValidator.AtLeast(Name, nameof(RatePerKwh), RatePerKwh, 0f);
+            BuiltInLight.StandbyWatts = ConfigValidator.AtLeast(Name, "BuiltInLight.StandbyWatts", BuiltInLight.StandbyWatts, 0f);
+            BuiltInLight.InUseWatts = ConfigValidator.AtLeast(Name, "BuiltInLight.InUseWatts", BuiltInLight.InUseWatts, 0f);
 
             foreach (string id in new List<string>(Appliances.Keys))
             {
@@ -95,7 +103,12 @@ namespace Lithium.Modules.ElectricBill
         private static readonly HashSet<string> PowerCutCodes = new();
 
         private readonly Dictionary<string, List<ApplianceRef>> _appliancesByCode = new();
+        private readonly Dictionary<string, List<ModularSwitch>> _switchesByCode = new();
         private readonly Dictionary<string, Property> _ownedByCode = new();
+
+        // Synthetic appliance id for the property's built-in (wall-switch) room lights.
+        private const string BuiltInLightId = "builtinlight";
+        private const string BuiltInLightName = "Built-in lights";
 
         private int _lastElapsedDay = -1;
         private int _minutesSincePersist;
@@ -103,6 +116,125 @@ namespace Lithium.Modules.ElectricBill
 
         public static bool IsPowerCut(string propertyCode) =>
             !string.IsNullOrEmpty(propertyCode) && PowerCutCodes.Contains(propertyCode);
+
+        // One grouped appliance line for the phone app's electric table.
+        public sealed class ApplianceLine
+        {
+            public string Name;
+            public int Count;
+            public float CurrentWatts;   // sum of each unit's live draw (in-use if active, else standby)
+            public float AccruedCost;    // actual cost accrued by this source this billing period
+            public float ProjectedCost;  // cost over one billing interval at the current draw
+        }
+
+        // Read-only electric snapshot for one property, for the phone app.
+        public sealed class ElectricAppView
+        {
+            public bool ModuleEnabled;
+            public bool PoweredOff;
+            public float OutstandingBill;
+            public float TotalWatts;
+            public float TotalAccrued;
+            public float TotalProjected;
+            public List<ApplianceLine> Lines = new();
+        }
+
+        // Builds the live appliance breakdown for a property: per-source actual cost accrued this period
+        // plus the live draw and a week projection. Pass refresh:true (on app open / dropdown change) to
+        // rescan placed buildables and switches; otherwise the cached lists are reused (cheap).
+        public ElectricAppView GetAppView(string propertyCode, bool refresh)
+        {
+            ElectricAppView view = new() { ModuleEnabled = Configuration.Enabled };
+            if (!Configuration.Enabled || string.IsNullOrEmpty(propertyCode))
+                return view;
+
+            try
+            {
+                if (refresh || _ownedByCode.Count == 0)
+                    RefreshApplianceCache();
+
+                Store.TryGet(propertyCode, out ElectricBillState state);
+                if (state != null)
+                {
+                    view.PoweredOff = state.PoweredOff;
+                    view.OutstandingBill = state.OutstandingBill;
+                }
+
+                float hours = Configuration.BillingIntervalDays * 24f;
+                Dictionary<string, ApplianceLine> grouped = new();
+
+                // Placeable appliances.
+                if (_appliancesByCode.TryGetValue(propertyCode, out List<ApplianceRef> appliances))
+                {
+                    foreach (ApplianceRef app in appliances)
+                    {
+                        if (app.Item == null)
+                            continue;
+                        if (!Configuration.Appliances.TryGetValue(app.Id, out ElectricBillApplianceConfig cfg))
+                            continue;
+                        float watts = ApplianceStateResolver.IsActive(app.Id, app.Item) ? cfg.InUseWatts : cfg.StandbyWatts;
+                        ApplianceLine line = GetLine(grouped, app.Id, ApplianceDisplayName(app));
+                        line.Count++;
+                        line.CurrentWatts += watts;
+                    }
+                }
+
+                // Built-in room lights, grouped as a single source.
+                if (_switchesByCode.TryGetValue(propertyCode, out List<ModularSwitch> switches))
+                {
+                    foreach (ModularSwitch sw in switches)
+                    {
+                        if (sw == null)
+                            continue;
+                        int lights = CountLights(sw);
+                        float per = sw.isOn ? Configuration.BuiltInLight.InUseWatts : Configuration.BuiltInLight.StandbyWatts;
+                        ApplianceLine line = GetLine(grouped, BuiltInLightId, BuiltInLightName);
+                        line.Count += lights;
+                        line.CurrentWatts += lights * per;
+                    }
+                }
+
+                foreach (KeyValuePair<string, ApplianceLine> kv in grouped)
+                {
+                    ApplianceLine line = kv.Value;
+                    line.ProjectedCost = line.CurrentWatts * hours / 1000f * Configuration.RatePerKwh;
+                    if (state != null && state.AccruedByAppliance.TryGetValue(kv.Key, out float wm))
+                        line.AccruedCost = wm / 60f / 1000f * Configuration.RatePerKwh;
+                    view.TotalWatts += line.CurrentWatts;
+                    view.TotalAccrued += line.AccruedCost;
+                    view.TotalProjected += line.ProjectedCost;
+                    view.Lines.Add(line);
+                }
+                view.Lines.Sort((a, b) => b.ProjectedCost.CompareTo(a.ProjectedCost));
+            }
+            catch (Exception e)
+            {
+                Log.Warning($"[ElectricBill] App view build failed: {e.Message}");
+            }
+            return view;
+        }
+
+        private static ApplianceLine GetLine(Dictionary<string, ApplianceLine> grouped, string id, string name)
+        {
+            if (!grouped.TryGetValue(id, out ApplianceLine line))
+            {
+                line = new ApplianceLine { Name = name };
+                grouped[id] = line;
+            }
+            return line;
+        }
+
+        private static string ApplianceDisplayName(ApplianceRef app)
+        {
+            try
+            {
+                ItemInstance inst = app.Item != null ? app.Item.ItemInstance : null;
+                if (inst != null && !string.IsNullOrEmpty(inst.Name))
+                    return inst.Name;
+            }
+            catch { }
+            return app.Id;
+        }
 
         public override void Apply()
         {
@@ -161,24 +293,85 @@ namespace Lithium.Modules.ElectricBill
 
         private void AccrueMinute()
         {
-            foreach (KeyValuePair<string, List<ApplianceRef>> kv in _appliancesByCode)
+            foreach (string code in _ownedByCode.Keys)
             {
-                string code = kv.Key;
                 ElectricBillState state = GetOrCreate(code);
 
                 if (state.PoweredOff)
                 {
-                    EnforceCut(kv.Value);
+                    if (_appliancesByCode.TryGetValue(code, out List<ApplianceRef> cut))
+                        EnforceCut(cut);
                     continue;
                 }
 
-                state.AccruedWattMinutes += SumActiveWatts(kv.Value);
+                AccrueProperty(code, state, 1f);
             }
 
             if (++_minutesSincePersist >= 60)
             {
                 PersistAll();
                 _minutesSincePersist = 0;
+            }
+        }
+
+        // Accrues one block of watt-minutes for a property, broken down per appliance id (and the
+        // synthetic built-in-lights id). minutes = 1 for per-minute metering, or the skipped count.
+        private void AccrueProperty(string code, ElectricBillState state, float minutes)
+        {
+            if (_appliancesByCode.TryGetValue(code, out List<ApplianceRef> appliances))
+            {
+                foreach (ApplianceRef app in appliances)
+                {
+                    if (app.Item == null)
+                        continue;
+                    if (!Configuration.Appliances.TryGetValue(app.Id, out ElectricBillApplianceConfig cfg))
+                        continue;
+                    float watts = ApplianceStateResolver.IsActive(app.Id, app.Item) ? cfg.InUseWatts : cfg.StandbyWatts;
+                    AddAccrual(state, app.Id, watts * minutes);
+                }
+            }
+
+            if (_switchesByCode.TryGetValue(code, out List<ModularSwitch> switches))
+            {
+                float watts = BuiltInLightWatts(switches);
+                if (watts > 0f)
+                    AddAccrual(state, BuiltInLightId, watts * minutes);
+            }
+        }
+
+        private static void AddAccrual(ElectricBillState state, string id, float wattMinutes)
+        {
+            state.AccruedWattMinutes += wattMinutes;
+            state.AccruedByAppliance.TryGetValue(id, out float current);
+            state.AccruedByAppliance[id] = current + wattMinutes;
+        }
+
+        // Current draw (watts) of a property's built-in room lights: each controlled light draws the
+        // configured in-use watts while its switch is on, standby watts while off.
+        private float BuiltInLightWatts(List<ModularSwitch> switches)
+        {
+            float total = 0f;
+            foreach (ModularSwitch sw in switches)
+            {
+                if (sw == null)
+                    continue;
+                float per = sw.isOn ? Configuration.BuiltInLight.InUseWatts : Configuration.BuiltInLight.StandbyWatts;
+                total += CountLights(sw) * per;
+            }
+            return total;
+        }
+
+        private static int CountLights(ModularSwitch sw)
+        {
+            try
+            {
+                Il2CppReferenceArray<Il2CppScheduleOne.Misc.ToggleableLight> lights = sw.LightsToControl;
+                int n = lights != null ? lights.Length : 0;
+                return n > 0 ? n : 1;
+            }
+            catch
+            {
+                return 1;
             }
         }
 
@@ -194,12 +387,12 @@ namespace Lithium.Modules.ElectricBill
 
             try
             {
-                foreach (KeyValuePair<string, List<ApplianceRef>> kv in _appliancesByCode)
+                foreach (string code in _ownedByCode.Keys)
                 {
-                    ElectricBillState state = GetOrCreate(kv.Key);
+                    ElectricBillState state = GetOrCreate(code);
                     if (state.PoweredOff)
                         continue;
-                    state.AccruedWattMinutes += SumActiveWatts(kv.Value) * minutes;
+                    AccrueProperty(code, state, minutes);
                 }
                 PersistAll();
             }
@@ -207,21 +400,6 @@ namespace Lithium.Modules.ElectricBill
             {
                 Log.Warning($"[ElectricBill] Time-skip accrual failed: {e.Message}");
             }
-        }
-
-        // Sum of each appliance's current draw (in-use if active, else standby) for one minute, in watts.
-        private float SumActiveWatts(List<ApplianceRef> appliances)
-        {
-            float watts = 0f;
-            foreach (ApplianceRef app in appliances)
-            {
-                if (app.Item == null)
-                    continue;
-                if (!Configuration.Appliances.TryGetValue(app.Id, out ElectricBillApplianceConfig cfg))
-                    continue;
-                watts += ApplianceStateResolver.IsActive(app.Id, app.Item) ? cfg.InUseWatts : cfg.StandbyWatts;
-            }
-            return watts;
         }
 
         private static bool EndOfDayFreezeActive()
@@ -283,6 +461,7 @@ namespace Lithium.Modules.ElectricBill
             float kwh = state.AccruedWattMinutes / 60f / 1000f;
             float amount = kwh * Configuration.RatePerKwh;
             state.AccruedWattMinutes = 0f;
+            state.AccruedByAppliance.Clear();
 
             float due = amount + state.OutstandingBill;
             if (due < 0.01f)
@@ -416,6 +595,7 @@ namespace Lithium.Modules.ElectricBill
             try
             {
                 _appliancesByCode.Clear();
+                _switchesByCode.Clear();
                 _ownedByCode.Clear();
 
                 HashSet<string> ownedCodes = new();
@@ -430,6 +610,18 @@ namespace Lithium.Modules.ElectricBill
                         continue;
                     ownedCodes.Add(code);
                     _ownedByCode[code] = prop;
+
+                    // Built-in room lights ship with the property as wall switches.
+                    Il2CppSystem.Collections.Generic.List<ModularSwitch> switches = prop.Switches;
+                    if (switches != null && switches.Count > 0)
+                    {
+                        List<ModularSwitch> list = new();
+                        foreach (ModularSwitch sw in switches)
+                            if (sw != null)
+                                list.Add(sw);
+                        if (list.Count > 0)
+                            _switchesByCode[code] = list;
+                    }
                 }
 
                 BuildableItem[] all = UnityEngine.Object.FindObjectsOfType<BuildableItem>(true);
