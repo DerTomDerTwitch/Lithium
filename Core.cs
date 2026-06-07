@@ -17,6 +17,7 @@ using Lithium.Modules.LabOven;
 using Lithium.Modules.MixingStations;
 using Lithium.Modules.PhoneApp;
 using Lithium.Modules.PlantGrowth;
+using Lithium.Modules.Police;
 using Lithium.Modules.ProductTooltips;
 using Lithium.Modules.PropertyPrices;
 using Lithium.Modules.Rent;
@@ -67,6 +68,7 @@ namespace Lithium
             new ModRepairs(),
             new ModWeapons(),
             new ModWarehouse(),
+            new ModPolice(),
             new ModPhoneApp()
         ];
 
@@ -158,6 +160,7 @@ namespace Lithium
             base.OnUpdate();
 
             Get<ModPhoneApp>()?.DriveUpdate();
+            Get<ModPolice>()?.DriveUpdate();
 
             LithiumConfig config = LithiumConfig.Instance;
 

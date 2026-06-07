@@ -536,6 +536,9 @@
 		<Compile Include="Modules\Repairs\ModRepairs.cs" />
 		<Compile Include="Modules\Repairs\Patches\AtmDayPassPatch.cs" />
 		<Compile Include="Modules\Repairs\Patches\VendingMachineDayPassPatch.cs" />
+		<Compile Include="Modules\Police\ModPolice.cs" />
+		<Compile Include="Modules\Police\Contraband\ContrabandMatcher.cs" />
+		<Compile Include="Modules\Police\Contraband\ContrabandMarker.cs" />
 		<Compile Include="Modules\Weapons\ModWeapons.cs" />
 		<Compile Include="Modules\Weapons\WeaponMatcher.cs" />
 		<Compile Include="Modules\Weapons\WeaponPawnValue.cs" />
