@@ -657,6 +657,7 @@
 		<Compile Include="Modules\TrashGrabber\ModTrashGrabber.cs" />
 		<Compile Include="Modules\TrashGrabber\Patches\EquippableTrashGrabberGetCapacityPatch.cs" />
 		<Compile Include="Modules\TrashGrabber\Patches\EquippableTrashGrabberRefreshVisualsPatch.cs" />
+		<Compile Include="Modules\TrashGrabber\Patches\TrashGrabberItemUIPatch.cs" />
 		<Compile Include="Modules\TrashGrabber\Patches\TrashItemInteractedPatch.cs" />
 		<Compile Include="Modules\TrashGrabber\Patches\TrashItemHoveredPatch.cs" />
 		<Compile Include="Util\SuccessChanceCalculator.cs" />
