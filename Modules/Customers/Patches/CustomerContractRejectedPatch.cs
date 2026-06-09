@@ -12,13 +12,20 @@ namespace Lithium.Modules.Customers.Patches
         public static void Postfix(Customer __instance)
         {
             ModCustomersConfiguration config = Core.Get<ModCustomers>().Configuration;
-            if (!config.Enabled || !config.Contracts.Enabled || !config.Contracts.RetryNextDayOnRefusal)
+            if (!config.Enabled || !config.Contracts.Enabled)
                 return;
 
             if (!InstanceFinder.IsServer)
                 return;
 
-            ContractRetryTracker.FlagForRetry(__instance.CustomerData.name);
+            string name = __instance.CustomerData?.name;
+            if (string.IsNullOrEmpty(name))
+                return;
+
+            OfferDeadlineTracker.Clear(name);
+
+            if (config.Contracts.RetryNextDayOnRefusal)
+                ContractRetryTracker.FlagForRetry(name);
         }
     }
 }

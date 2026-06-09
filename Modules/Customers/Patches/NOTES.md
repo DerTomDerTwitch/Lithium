@@ -105,6 +105,21 @@ Only runs when `InstanceFinder.IsServer` is true. Offers/expiry state is server-
 
 ---
 
+## CustomerMinPassOfferExpiryPatch.cs
+
+**Patches:** `Customer.OnMinPass` — **Prefix** (see the file's XML doc for the inlining rationale)
+
+### Stale-entry sweep (no pending offer)
+When a customer has no live expiring offer but a tracked entry whose deadline has lapsed, the entry is removed. This is the universal cleanup for consumption paths with no reliable patch chokepoint — found in audit: a **customer-refused counter-offer** (`RpcLogic___ProcessCounterOfferServerSide`, rejected branch) nulls `OfferedContractInfo` inline with no `ExpireOffer`/`ContractRejected` call; also covers an accept/reject postfix the native build might inline past, and entries left by pre-fix saves. `OnMinPass` is un-inlinable, so every leak is removed within one game minute of its deadline passing — always before the customer's next offer could inherit it (the instant-cancel bug).
+
+### Why only LAPSED entries are swept
+An entry with a still-future deadline and no offer is exactly the signature `GhostOfferRegenerationPatch` uses to detect a ghost and re-issue the offer when the player opens the conversation — sweeping it would silently disable ghost repair. A lapsed entry is unambiguously dead in both interpretations (a ghost past its window is dropped, not regenerated), so lapse is the safe sweep criterion. Residual: a stale *future* entry (e.g. accept-clear inlined past) lives until its deadline passes; the worst it can do meanwhile is lend a later offer a longer-than-promised window — it can never instant-cancel.
+
+### Tracker entry lifecycle (audit summary)
+Entry **created**: `SetOfferedContract` postfix (inline-prone), `NotifyPlayerOfContract` announce repair, `OnMinPass` self-heal, `Customer.Load` restore. Entry **cleared**: deadline expiry through the `ExpireOffer` guard, player accept (`ContractAccepted` postfix), player reject (`ContractRejected` postfix), ghost-conversation cleanup, the lapsed-entry sweep here, and `Unload()` on save unload. Counter-offer accepted keeps the same pending offer (entry stays valid until [Schedule Deal] → accept). `DealerManagementApp.AssignCustomer`'s direct `ExpireOffer()` is blocked by the guard while the deadline is live — the offer (and entry) then run to their normal deadline.
+
+---
+
 ## CustomerLoadOfferDeadlinePatch.cs
 
 **Patches:** `Customer.Load(CustomerData)` — **Postfix**
@@ -123,6 +138,27 @@ After `Load` restores an expiring offer:
 
 ### Why `ExpiresAfter` is NOT widened here
 Same reason as `CustomerOfferDeadlinePatch`: inflated `ExpiresAfter` makes the deal-acceptance time picker silently refuse to open (bisected in-game). Re-anchoring `OfferedContractTime` alone already keeps the native deadline in the future; the longer window is held open by `OfferDeadlineTracker` + `ExpireOffer` guard.
+
+### Grace window for lapsed restored deadlines (`GraceMinutes = 180`)
+A save can carry a live offer whose tracked deadline already lies in the past: the wake-save race (`RpcLogic___OnTimeSkip_Client` fires the wake `onMinutePass` staggered, and `SaveManager.Save()` can run before the customer's tick expires the offer), or simply a save from before `OfferDeadlineTimeSkipPatch` existed. Honoring such a deadline "exactly" meant the session's first minute tick expired the offer with a bare "nvm" — at day start, with the offer text buried in the previous day's history (the second Kyle report). Instead, a short grace (180 game-minutes, capped at the promised window) is granted so the player can respond. Deliberately far below the full window, preserving the anti-farm intent of the never-extend-on-reload rule.
+
+---
+
+## OfferDeadlineTimeSkipPatch.cs
+
+**Patches:** `TimeManager.OnTimeSkip_Client(int, int)` — **Prefix**
+
+### Purpose
+Freezes acceptance windows across time skips (sleep, story skips). The window measures the player's *decision time*; a sleep jumps the clock straight past any deadline in the slept-over night. `RpcLogic___OnTimeSkip_Client` sets the new time, increments the day, then fires `onMinutePass` once — so the first wake tick of `CustomerMinPassOfferExpiryPatch` saw `now >= deadline` and expired the offer, delivering a bare "nvm" as the first message of the day (second Kyle report: evening offer, "tomorrow 3 AM" deadline, cancelled at day start).
+
+### Mechanism
+Prefix (runs before the native body, hence before the wake `onMinutePass`) shifts every live tracked deadline forward by the skipped minutes. Deadlines already lapsed *before* the skip are left alone — they expired fairly while the player was awake. The shift equals exactly the skipped time, so there is no free extension. Same chokepoint as ElectricBill's `TimeSkipBillingPatch` (proven patchable, not inlined).
+
+### Modular skip count, not the game's
+The skipped count is `((minSum(new) - minSum(old)) % 1440 + 1440) % 1440` — the game's own `Mathf.Abs` diff overstates a wrapped skip (22:00 → 7:00 gives 900 instead of the real 540), and tracker deadlines are absolute min-sums (`elapsedDays * 1440 + minute-of-day`).
+
+### Server-authoritative
+Only runs when `InstanceFinder.IsServer` is true (the wrapper only executes on the host; pure clients go through the RPC reader, which this patch does not touch — tracker state is server-owned anyway).
 
 ---
 
@@ -173,10 +209,31 @@ Only runs when `InstanceFinder.IsServer` is true.
 **Patches:** `Customer.ContractRejected` — **Postfix**
 
 ### Purpose
-The player refused a contract offer (declined it in the Messages app). Flags the customer so they re-attempt an order the next day instead of waiting for their next scheduled order day, via `ContractRetryTracker.FlagForRetry`.
+The player refused a contract offer (declined it in the Messages app). Clears the `OfferDeadlineTracker` entry (the offer is consumed — see the stale-deadline bug under `CustomerContractAcceptedPatch`), then flags the customer so they re-attempt an order the next day instead of waiting for their next scheduled order day, via `ContractRetryTracker.FlagForRetry` (only when `RetryNextDayOnRefusal` is on; the tracker clear is unconditional).
+
+### Inline safety
+`ContractRejected` is delegate-bound (it is registered as a message-response `callback`), so it cannot be inlined away — a reliable patch point.
 
 ### Server-authoritative
 Only runs when `InstanceFinder.IsServer` is true. Scheduling is server-authoritative.
+
+---
+
+## CustomerContractAcceptedPatch.cs
+
+**Patches:** `Customer.ContractAccepted(EDealWindow, bool, Dealer)` — **Postfix**
+
+### Purpose
+Clears the `OfferDeadlineTracker` entry once an offer is consumed by acceptance. Both the player accept path (`SendContractAccepted` RPC → `ContractAccepted`) and the dealer path route through this method.
+
+### The stale-deadline bug this fixes
+The tracker (persisted per save slot) was only ever cleared when an expiry actually passed through `CustomerExpireOfferGuardPatch` — never on accept/reject. A leftover entry from a consumed offer has a deadline in the past. When the customer's NEXT offer arrived days later and the inline-prone `Customer.SetOfferedContract` patch (`CustomerOfferDeadlinePatch`) failed to overwrite the entry, `CustomerMinPassOfferExpiryPatch` found the stale elapsed deadline on the next minute tick — its self-heal only engages when NO entry exists — and expired the brand-new offer itself; the guard saw `now >= deadline` and let it through. Symptom: the offer text and the "nvm" cancellation arrive in the same moment (reported with Kyle, offer ~3 PM, promised deadline next-day 3 AM).
+
+### Defense in depth
+Three legs close the hole: clear on accept (this patch), clear on reject (`CustomerContractRejectedPatch`), and announce-time repair (`CustomerOfferDeadlineMessagePatch.RepairTrackedDeadline`) — the last one fixes the instant-cancel even if this postfix is ever inlined past, since `NotifyPlayerOfContract` demonstrably fires (it renders the deadline text).
+
+### Server-authoritative
+Only runs when `InstanceFinder.IsServer` is true.
 
 ---
 
@@ -234,6 +291,9 @@ A deterministic template index (stable per offer) is computed so the duplicate g
 
 ### Deadline derivation
 `contract.ExpiresAfter` is not populated yet when the offer message is built, so the acceptance window is derived from `Customer.OFFER_EXPIRY_TIME_MINS` and the same large-order extension logic as `CustomerOfferDeadlinePatch` (`OfferAcceptanceWindow.Extend`).
+
+### `RepairTrackedDeadline` — announce-time tracker repair
+`NotifyPlayerOfContract` is the one per-offer hook that demonstrably fires (the deadline text it appends shows up in-game), so it doubles as the authoritative repair point for the `OfferDeadlineTracker`: if no entry exists for the customer, or the existing entry has already elapsed (a stale leftover from a consumed offer — see `CustomerContractAcceptedPatch`), the freshly computed deadline is written. A live (future) entry is never touched, so multi-fires of `NotifyPlayerOfContract` cannot extend a window. This also keeps the promised text and the enforced deadline in agreement when `CustomerOfferDeadlinePatch` (inline-prone `SetOfferedContract`) didn't fire. Server-gated; runs even when `SendDeadlineMessage` is off (the message-only guards come after it).
 
 ### `EDay` convention
 `EDay` is Monday = 0 .. Sunday = 6, matching the `DayNames` array.

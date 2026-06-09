@@ -10,7 +10,7 @@ using Lithium.Helper;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Lithium.Modules.ProductTooltips.Patches
+namespace Lithium.Modules.Products.Patches
 {
     [HarmonyPatch(typeof(ItemInfoPanel), nameof(ItemInfoPanel.Open), new[] { typeof(ItemInstance), typeof(RectTransform) })]
     internal static class ProductInfoPanelMixesPatch
@@ -25,8 +25,8 @@ namespace Lithium.Modules.ProductTooltips.Patches
         [HarmonyPostfix]
         private static void Postfix(ItemInfoPanel __instance, ItemInstance item)
         {
-            ModProductTooltipsConfiguration config = Core.Get<ModProductTooltips>().Configuration;
-            if (!config.Enabled)
+            ModProductsConfiguration config = Core.Get<ModProducts>().Configuration;
+            if (!config.Enabled || !config.ShowMixRecipes)
                 return;
 
             try
@@ -83,12 +83,12 @@ namespace Lithium.Modules.ProductTooltips.Patches
             }
             catch (Exception e)
             {
-                Log.Error($"[Lithium] ProductTooltips failed for {(item != null && item.Definition != null ? item.Definition.ID : "?")}: {e}");
+                Log.Error($"[Lithium] Products tooltip failed for {(item != null && item.Definition != null ? item.Definition.ID : "?")}: {e}");
             }
         }
 
         private static RectTransform BuildRows(ItemInfoContent content, TextMeshProUGUI template, List<MixRow> rows,
-            float topOffset, float blockHeight, float rowHeight, float iconSize, ModProductTooltipsConfiguration config)
+            float topOffset, float blockHeight, float rowHeight, float iconSize, ModProductsConfiguration config)
         {
             GameObject rootGo = new(RootName);
             RectTransform root = rootGo.AddComponent<RectTransform>();
@@ -228,7 +228,7 @@ namespace Lithium.Modules.ProductTooltips.Patches
             }
         }
 
-        private static List<MixRow> BuildForwardRecipes(ProductDefinition product, ModProductTooltipsConfiguration config)
+        private static List<MixRow> BuildForwardRecipes(ProductDefinition product, ModProductsConfiguration config)
         {
             List<MixRow> rows = new();
             ProductManager manager = NetworkSingleton<ProductManager>.Instance;

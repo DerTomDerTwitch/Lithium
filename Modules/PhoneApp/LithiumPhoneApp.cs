@@ -14,10 +14,12 @@ using PhoneT = Il2CppScheduleOne.UI.Phone.Phone;
 
 namespace Lithium.Modules.PhoneApp
 {
-    // The "Lithium" phone app: a read-only dashboard showing, per rent-enabled property, the current
-    // week's rent status (paid/unpaid, amount, next due, contact + dead drop) and a live breakdown of the
-    // electric bill by appliance. Built entirely from code (no AssetBundle); the open/close lifecycle is
-    // driven manually rather than via the game's generic App<T> base.
+    // The "Lithium" phone app, a read-only dashboard with tabbed pages:
+    //  - "Property": per rent-enabled property, the current week's rent status (paid/unpaid, amount, next
+    //    due, contact + dead drop) and a live breakdown of the electric bill by appliance.
+    //  - "Daily": the customers ordering today (see DailyOrdersPage).
+    // Built entirely from code (no AssetBundle); the open/close lifecycle is driven manually rather than
+    // via the game's generic App<T> base.
     internal sealed class LithiumPhoneApp
     {
         private const string IconObjectName = "LithiumPhoneIcon";
@@ -34,12 +36,21 @@ namespace Lithium.Modules.PhoneApp
         private const string RedHex = "#FF5151";
         private const string Dim = "#9AA0A6";
 
+        private static readonly Color TabSelected = new(0.34f, 0.30f, 0.62f, 1f);
+        private static readonly Color TabUnselected = new(0.15f, 0.15f, 0.19f, 1f);
+
         private GameObject _appContainer;
         private GameObject _icon;
         private GameObject _bodyContent;
         private RectTransform _bodyContentRect;
         private Dropdown _dropdown;
         private Font _font;
+
+        private readonly List<GameObject> _pages = new();
+        private readonly List<Image> _tabBackgrounds = new();
+        private readonly List<Text> _tabLabels = new();
+        private int _tabIndex;
+        private DailyOrdersPage _daily;
 
         private bool _isOpen;
         private bool _wasPhoneOpen;
@@ -92,12 +103,17 @@ namespace Lithium.Modules.PhoneApp
             header.text = "Lithium";
             SetRect(header.rectTransform, 0.05f, 0.92f, 0.95f, 0.985f);
 
+            // --- Tab bar + pages ---
+            GameObject pageProperty = MakePage("PageProperty");
+            GameObject pageDaily = MakePage("PageDaily");
+            BuildTabBar(("Property", pageProperty), ("Daily", pageDaily));
+
             _dropdown = PhoneAppBuilder.CloneDropdown();
             if (_dropdown != null)
             {
-                _dropdown.transform.SetParent(_appContainer.transform, false);
+                _dropdown.transform.SetParent(pageProperty.transform, false);
                 _dropdown.transform.localScale = Vector3.one;
-                SetRect(_dropdown.GetComponent<RectTransform>(), 0.05f, 0.835f, 0.95f, 0.905f);
+                SetRect(_dropdown.GetComponent<RectTransform>(), 0.05f, 0.775f, 0.95f, 0.845f);
                 _dropdown.onValueChanged.AddListener(PhoneAppBuilder.UA(OnDropdownChanged));
             }
             else
@@ -105,20 +121,91 @@ namespace Lithium.Modules.PhoneApp
                 Log.Warning("[PhoneApp] Could not clone a phone dropdown; selector unavailable.");
             }
 
-            CreateBody();
+            CreateBody(pageProperty);
+
+            _daily = new DailyOrdersPage();
+            GameObject dailyList = _daily.Build(pageDaily.transform, _font);
+            SetRect(dailyList.GetComponent<RectTransform>(), 0.04f, 0.03f, 0.96f, 0.845f);
+
+            SelectTab(0, refresh: false);
             _appContainer.SetActive(false);
 
             _icon = PhoneAppBuilder.MakeIcon(IconObjectName, "Lithium",
                 PhoneAppBuilder.LoadIconOrDefault(IconColor), OnIconClicked);
         }
 
-        private void CreateBody()
+        // A full-size page root; SelectTab toggles page visibility.
+        private GameObject MakePage(string name)
+        {
+            GameObject page = new(name);
+            RectTransform rt = page.AddComponent<RectTransform>();
+            rt.SetParent(_appContainer.transform, false);
+            page.transform.localScale = Vector3.one;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            _pages.Add(page);
+            return page;
+        }
+
+        private void BuildTabBar(params (string Label, GameObject Page)[] tabs)
+        {
+            GameObject bar = new("Tabs");
+            RectTransform brt = bar.AddComponent<RectTransform>();
+            brt.SetParent(_appContainer.transform, false);
+            bar.transform.localScale = Vector3.one;
+            SetRect(brt, 0.05f, 0.85f, 0.95f, 0.915f);
+
+            float width = 1f / tabs.Length;
+            for (int i = 0; i < tabs.Length; i++)
+            {
+                int index = i;
+                Button btn = PhoneAppBuilder.MakeButton(bar.transform, _font, "Tab" + tabs[i].Label,
+                    tabs[i].Label, 26, TabUnselected, Color.white, () => OnTabClicked(index),
+                    out Image bg, out Text label);
+                RectTransform rt = btn.GetComponent<RectTransform>();
+                rt.anchorMin = new Vector2(i * width, 0f);
+                rt.anchorMax = new Vector2((i + 1) * width, 1f);
+                rt.offsetMin = new Vector2(i == 0 ? 0f : 3f, 0f);
+                rt.offsetMax = new Vector2(i == tabs.Length - 1 ? 0f : -3f, 0f);
+                _tabBackgrounds.Add(bg);
+                _tabLabels.Add(label);
+            }
+        }
+
+        private void OnTabClicked(int index)
+        {
+            if (_tabIndex != index)
+                SelectTab(index, refresh: _isOpen);
+        }
+
+        private void SelectTab(int index, bool refresh)
+        {
+            _tabIndex = index;
+            for (int i = 0; i < _pages.Count; i++)
+                _pages[i].SetActive(i == index);
+            for (int i = 0; i < _tabBackgrounds.Count; i++)
+            {
+                _tabBackgrounds[i].color = i == index ? TabSelected : TabUnselected;
+                _tabLabels[i].color = i == index ? Color.white : Gray;
+            }
+
+            if (!refresh)
+                return;
+            if (index == 0)
+                RebuildBody(refreshElectric: true);
+            else
+                _daily.Rebuild();
+        }
+
+        private void CreateBody(GameObject page)
         {
             GameObject scroll = new("Body");
             RectTransform srt = scroll.AddComponent<RectTransform>();
-            srt.SetParent(_appContainer.transform, false);
+            srt.SetParent(page.transform, false);
             scroll.transform.localScale = Vector3.one;
-            SetRect(srt, 0.04f, 0.03f, 0.96f, 0.815f);
+            SetRect(srt, 0.04f, 0.03f, 0.96f, 0.755f);
 
             GameObject viewport = new("Viewport");
             RectTransform vrt = viewport.AddComponent<RectTransform>();
@@ -174,7 +261,7 @@ namespace Lithium.Modules.PhoneApp
             PlayerSingleton<PhoneT>.Instance.SetIsHorizontal(false);
             PlayerSingleton<PhoneT>.Instance.SetLookOffsetMultiplier(1f);
 
-            RebuildBody(refreshElectric: true);
+            SelectTab(_tabIndex, refresh: true);
         }
 
         private void Close()
@@ -227,7 +314,12 @@ namespace Lithium.Modules.PhoneApp
             if (Time.time - _lastRefresh >= RefreshInterval)
             {
                 _lastRefresh = Time.time;
-                RebuildBody(refreshElectric: false);
+                // The property dashboard shows live electric draw, so it re-renders continuously; the
+                // daily list only changes when the in-game day rolls over.
+                if (_tabIndex == 0)
+                    RebuildBody(refreshElectric: false);
+                else if (_daily.NeedsRefresh)
+                    _daily.Rebuild();
             }
         }
 

@@ -38,6 +38,36 @@ namespace Lithium.Modules.PhoneApp
             return t;
         }
 
+        // --- Button ---------------------------------------------------------------------------------
+        // A simple button: background Image (target graphic) + centered child label. Returns both so the
+        // caller can restyle them later (e.g. tab selection states).
+        public static Button MakeButton(Transform parent, Font font, string name, string label, int fontSize,
+            Color bgColor, Color textColor, Action onClick, out Image bg, out Text labelText)
+        {
+            GameObject go = new(name);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.SetParent(parent, false);
+            go.transform.localScale = Vector3.one;
+
+            bg = go.AddComponent<Image>();
+            bg.color = bgColor;
+
+            Button btn = go.AddComponent<Button>();
+            btn.targetGraphic = bg;
+
+            labelText = MakeText(go.transform, font, "Label", fontSize, textColor, TextAnchor.MiddleCenter, false);
+            RectTransform lrt = labelText.rectTransform;
+            lrt.anchorMin = Vector2.zero;
+            lrt.anchorMax = Vector2.one;
+            lrt.offsetMin = Vector2.zero;
+            lrt.offsetMax = Vector2.zero;
+            labelText.text = label;
+
+            if (onClick != null)
+                btn.onClick.AddListener(UA(onClick));
+            return btn;
+        }
+
         // --- App panel frame ------------------------------------------------------------------------
         // Creates the root app GameObject under the apps canvas, sized to match an existing app's rect so
         // it fills the phone screen correctly. Returns the container (inactive by default).

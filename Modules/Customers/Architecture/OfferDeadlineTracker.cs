@@ -18,12 +18,12 @@ namespace Lithium.Modules.Customers.Architecture
             return !string.IsNullOrEmpty(customerName) && Store.TryGet(customerName, out deadlineMinSum);
         }
 
-        public static void Clear(string customerName)
+        public static bool Clear(string customerName)
         {
             if (string.IsNullOrEmpty(customerName))
-                return;
+                return false;
 
-            Store.Remove(customerName);
+            return Store.Remove(customerName);
         }
 
         public static void Unload() => Store.Unload();

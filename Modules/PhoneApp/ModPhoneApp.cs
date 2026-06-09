@@ -14,8 +14,9 @@ namespace Lithium.Modules.PhoneApp
         }
     }
 
-    // Adds a custom "Lithium" app to the in-game smartphone showing rent + electric-bill status per
-    // property. The app UI is built from code (no AssetBundle) and its lifecycle is driven manually:
+    // Adds a custom "Lithium" app to the in-game smartphone with tabbed pages: "Property" (rent +
+    // electric-bill status per property) and "Daily" (today's ordering customers, see DailyOrdersPage).
+    // The app UI is built from code (no AssetBundle) and its lifecycle is driven manually:
     // Apply() (re)creates it on each save load; DriveUpdate() is forwarded from Core.OnUpdate.
     public class ModPhoneApp : ModuleBase<ModPhoneAppConfiguration>
     {

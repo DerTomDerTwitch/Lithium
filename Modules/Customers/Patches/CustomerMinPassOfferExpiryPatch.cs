@@ -56,15 +56,32 @@ namespace Lithium.Modules.Customers.Patches
                 if (!InstanceFinder.IsServer)
                     return;
 
-                ContractInfo contract = __instance.OfferedContractInfo;
-                if (contract == null || !contract.Expires)
-                    return;
-
                 string name = __instance.CustomerData?.name;
                 if (string.IsNullOrEmpty(name))
                     return;
 
                 int now = TimeManager.Instance.GetDateTime().GetMinSum();
+
+                ContractInfo contract = __instance.OfferedContractInfo;
+                if (contract == null || !contract.Expires)
+                {
+                    // Universal stale-entry sweep. With no live expiring offer, a tracked entry is
+                    // either a ghost-offer marker (GhostOfferRegenerationPatch needs it while its
+                    // deadline is still in the future — do NOT touch those) or, once its deadline has
+                    // lapsed, an unambiguous leftover from a consumption path without a reliable
+                    // patch chokepoint (a customer-refused counter-offer nulls the offer inline in an
+                    // RPC body; an accept/reject postfix the native build inlined past; pre-fix
+                    // saves). OnMinPass is un-inlinable, so every leak is removed within one game
+                    // minute of its deadline passing — always before the customer's next offer could
+                    // inherit it.
+                    if (OfferDeadlineTracker.TryGet(name, out int lapsed) && now >= lapsed)
+                    {
+                        OfferDeadlineTracker.Clear(name);
+                        Log.Info($"[Customers] Swept stale offer deadline for {name} (no pending offer, " +
+                            $"deadline lapsed {now - lapsed} min ago).");
+                    }
+                    return;
+                }
 
                 if (!OfferDeadlineTracker.TryGet(name, out int deadlineMinSum))
                 {
@@ -101,6 +118,8 @@ namespace Lithium.Modules.Customers.Patches
                 // tick (we just kept OfferedContractTime fresh), so drive the wrapper directly. The
                 // ExpireOffer guard sees now >= deadline, clears the tracker, runs the real expiry
                 // (sends the text, nulls the offer); CustomerExpireOfferPatch flags the retry.
+                Log.Info($"[Customers] Expiring {name}'s offer: now {now} >= deadline {deadlineMinSum} " +
+                    $"(overshoot {now - deadlineMinSum} min).");
                 __instance.ExpireOffer();
             }
             catch (Exception e)

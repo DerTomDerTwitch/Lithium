@@ -571,12 +571,14 @@
 		<Compile Include="Modules\Customers\ProductCoverageNotifier.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerBulkRewardPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerContractGenerationPatch.cs" />
+		<Compile Include="Modules\Customers\Patches\CustomerContractAcceptedPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerContractRejectedPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerExpireOfferPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerExpireOfferGuardPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerUpdateOfferExpiryPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerMinPassOfferExpiryPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerSleepOfferGuardPatch.cs" />
+		<Compile Include="Modules\Customers\Patches\OfferDeadlineTimeSkipPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerLoadOfferDeadlinePatch.cs" />
 		<Compile Include="Modules\Customers\Patches\ContactsPanelOrderPatternPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerNextOrderMessagePatch.cs" />
@@ -640,6 +642,7 @@
 		<Compile Include="Modules\PhoneApp\LithiumPhoneApp.cs" />
 		<Compile Include="Modules\PhoneApp\PhoneAppBuilder.cs" />
 		<Compile Include="Modules\PhoneApp\PhoneAppFont.cs" />
+		<Compile Include="Modules\PhoneApp\DailyOrdersPage.cs" />
 		<Compile Include="Modules\DryingRacks\ModDryingRacks.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\HarvestPotBehaviourYieldPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Patches\PlantGrowthDonePatch.cs" />
@@ -672,8 +675,11 @@
 		<Compile Include="Modules\MixingStations\ModMixingStations.cs" />
 		<Compile Include="Modules\MixingStations\Patches\MixingStationCapacityPatch.cs" />
 		<Compile Include="Modules\MixingStations\Patches\MixingStationSpeedPatch.cs" />
-		<Compile Include="Modules\ProductTooltips\ModProductTooltips.cs" />
-		<Compile Include="Modules\ProductTooltips\Patches\ProductItemInfoContentPatch.cs" />
+		<Compile Include="Modules\Products\ModProducts.cs" />
+		<Compile Include="Modules\Products\ProductFilterUi.cs" />
+		<Compile Include="Modules\Products\ProductListFilter.cs" />
+		<Compile Include="Modules\Products\Patches\ProductItemInfoContentPatch.cs" />
+		<Compile Include="Modules\Products\Patches\ProductManagerAppFilterPatch.cs" />
 	</ItemGroup>
 	
 	<Target Name="PostBuild" AfterTargets="PostBuildEvent">

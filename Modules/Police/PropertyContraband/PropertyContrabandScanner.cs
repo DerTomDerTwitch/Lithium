@@ -324,8 +324,12 @@ namespace Lithium.Modules.Police.PropertyContraband
 
         /// <summary>
         /// Whether a property toggleable is a window covering that is currently open. Identified by its interaction
-        /// prompt mentioning blinds/curtains/shutters; "open" when the action it currently offers is to CLOSE it
-        /// (so we never depend on which boolean state the prefab calls "activated").
+        /// prompt mentioning blinds/curtains/shutters; the action it currently offers tells us the state (we never
+        /// depend on which boolean the prefab calls "activated"): an action that OPENS the covering means it's
+        /// currently closed, one that CLOSES it means it's open.
+        ///
+        /// Fail-safe to <b>closed</b> when the wording isn't recognised — a wrongful bust while you've sealed up is
+        /// far more frustrating than a cop occasionally not noticing through an oddly-labelled open blind.
         /// </summary>
         internal static bool IsOpenBlind(InteractableToggleable toggleable)
         {
@@ -341,8 +345,17 @@ namespace Lithium.Modules.Police.PropertyContraband
             // The prompt currently shown to the player is the action available right now.
             string current = (toggleable.IsActivated ? deactivate : activate).ToLowerInvariant();
 
-            // If the available action is to OPEN it, it's currently closed (sealed); otherwise treat it as open.
-            return !current.Contains("open");
+            // Offered action OPENS it → it's currently CLOSED (sealed). Checked first so "open up"/"open the blinds"
+            // can't be misread by the "up" in the close branch.
+            if (current.Contains("open") || current.Contains("raise"))
+                return false;
+
+            // Offered action CLOSES it → it's currently OPEN.
+            if (current.Contains("close") || current.Contains("shut") || current.Contains("lower"))
+                return true;
+
+            // Unrecognised wording — assume sealed so a mislabelled blind never wrongly exposes the property.
+            return false;
         }
 
         // ── Contraband collection ────────────────────────────────────────────────────────────────────

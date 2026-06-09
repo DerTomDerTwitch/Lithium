@@ -18,7 +18,7 @@ using Lithium.Modules.MixingStations;
 using Lithium.Modules.PhoneApp;
 using Lithium.Modules.PlantGrowth;
 using Lithium.Modules.Police;
-using Lithium.Modules.ProductTooltips;
+using Lithium.Modules.Products;
 using Lithium.Modules.PropertyPrices;
 using Lithium.Modules.Rent;
 using Lithium.Modules.Repairs;
@@ -59,7 +59,7 @@ namespace Lithium
             new ModEffectCombos(),
             new ModVehicles(),
             new ModEndOfDayFreeze(),
-            new ModProductTooltips(),
+            new ModProducts(),
             new ModBanking(),
             new ModElectricBill(),
             new ModRent(),
