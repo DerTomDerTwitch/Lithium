@@ -215,6 +215,11 @@ namespace Lithium
             {
                 NpcRosterDebug.Dump();
             }
+
+            if (config.HotkeyF11PoliceScanDump && Input.GetKeyDown(KeyCode.F11))
+            {
+                Lithium.Modules.Police.PropertyContraband.PoliceContrabandDebug.Dump();
+            }
         }
     }
 }

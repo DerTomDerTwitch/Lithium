@@ -20,6 +20,7 @@ namespace Lithium
         public bool HotkeyF5ExpandVeeperStorage = false;  // F5 — expand Veeper storage
         public bool HotkeyF6OrderPatternDump = false;     // F6 — OrderPatternDebug.Dump
         public bool HotkeyF7NpcRosterDump = false;        // F7 — NpcRosterDebug.Dump
+        public bool HotkeyF11PoliceScanDump = false;      // F11 — PoliceContrabandDebug.Dump (opt-in)
 
         private static string ConfigFolder => Path.Combine(MelonEnvironment.UserDataDirectory, "Lithium");
         private static string FilePath => Path.Combine(ConfigFolder, "Lithium.json");
