@@ -51,10 +51,25 @@ namespace Lithium.Modules.Customers.Patches
 
             __instance.PropertiesLabel.text += marker + Describe(profile);
 
-            string preferences = DescribePreferences(customer.CustomerData);
-            if (preferences != null)
-                __instance.PropertiesLabel.text += "\nPrefers: " + preferences;
+            // The detail-panel body has a bounded height budget; overflowing it shoves the name header out
+            // of the panel's visible area (see git 1694b0e). FULLY-UNLOCKED customers are the only ones that
+            // also render the native Most-purchased + Total-spent blocks (potential customers return before
+            // those), so they have the least headroom — appending the variable-length, wrap-prone "Prefers"
+            // line on top tips them over and the name disappears. Their purchase history already conveys
+            // their preferences, so the line is added only for not-yet-unlocked customers, which have the
+            // spare room and no purchase history of their own.
+            if (!npc.RelationData.Unlocked)
+            {
+                string preferences = DescribePreferences(customer.CustomerData);
+                if (preferences != null)
+                    __instance.PropertiesLabel.text += "\nPrefers: " + preferences;
+            }
         }
+
+        // The most significant affinities only, so the line stays short enough not to wrap (each wrapped
+        // row adds to the body's height budget). Near-zero affinities carry little signal and are dropped.
+        private const int MaxPreferencesShown = 3;
+        private const float MinAffinityShown = 0.05f;
 
         private static string DescribePreferences(CustomerData data)
         {
@@ -62,6 +77,9 @@ namespace Lithium.Modules.Customers.Patches
                 return null;
 
             var parts = data.DefaultAffinityData.ProductAffinities.ToList()
+                .Where(a => Mathf.Abs(a.Affinity) >= MinAffinityShown)
+                .OrderByDescending(a => Mathf.Abs(a.Affinity))
+                .Take(MaxPreferencesShown)
                 .Select(a => $"{a.DrugType} {Mathf.RoundToInt(a.Affinity * 100f).ToString("+0;-0;0")}%")
                 .ToList();
 
