@@ -514,6 +514,8 @@
 		<Compile Include="Modules\Banking\Patches\AtmDepositDisplayPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\AtmAvailableAmountsPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\AtmRemainingDepositPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\AtmSelectedAmountPatch.cs" />
+		<Compile Include="Modules\Banking\Patches\AtmAmountFromIndexPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\AtmDayPassPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\AtmTransactionPatch.cs" />
 		<Compile Include="Modules\Banking\Patches\LaunderCapacityPatch.cs" />
