@@ -1,4 +1,5 @@
 ﻿using Il2CppScheduleOne.Employees;
+using Lithium.Modules.Employees.ProductionOrders;
 
 namespace Lithium.Modules.Employees
 {
@@ -46,6 +47,14 @@ namespace Lithium.Modules.Employees
         public int InventoryRowCount = 1;
     }
 
+    // Chemist production orders ("produce N of product Y", fulfilled across the chemist's mixing stations).
+    // Gated by its own Enabled (independent of the employee-tuning Enabled above), off by default (vanilla).
+    public class ChemistOrdersConfiguration
+    {
+        public bool Enabled = false;
+        public bool AddDialogueOption = true;
+    }
+
     public class ModEmployeesConfiguration : ModuleConfiguration
     {
         public override string Name => "Employees";
@@ -57,6 +66,7 @@ namespace Lithium.Modules.Employees
         public PackagerConfiguration Packagers = new PackagerConfiguration();
         public CleanerConfiguration Cleaners = new CleanerConfiguration();
         public DealerConfiguration Dealers = new DealerConfiguration();
+        public ChemistOrdersConfiguration ChemistOrders = new ChemistOrdersConfiguration();
     }
 
     public class ModEmployees : ModuleBase<ModEmployeesConfiguration>
@@ -77,6 +87,8 @@ namespace Lithium.Modules.Employees
 
         public override void Apply()
         {
+            // Reset the production-order feature's per-save state (order store, history, orchestrator caches).
+            ChemistOrderService.Reset();
         }
     }
 }

@@ -490,6 +490,8 @@
 		<Compile Include="Log.cs" />
 		<Compile Include="Helper\CollectionConverter.cs" />
 		<Compile Include="Helper\ConfigValidator.cs" />
+		<Compile Include="Helper\HostStateSync.cs" />
+		<Compile Include="Helper\VariableSyncGuardPatch.cs" />
 		<Compile Include="Helper\ProductHelper.cs" />
 		<Compile Include="Helper\RankHelper.cs" />
 		<Compile Include="Helper\StableHash.cs" />
@@ -638,6 +640,17 @@
 		<Compile Include="Modules\Storyline\Patches\QuestWelcomeToHylandPointPatch.cs" />
 		<Compile Include="Modules\PlantGrowth\Behaviours\PlantBaseQuality.cs" />
 		<Compile Include="Modules\PlantGrowth\ModPlants.cs" />
+		<Compile Include="Modules\Employees\ProductionOrders\ChemistOrderState.cs" />
+		<Compile Include="Modules\Employees\ProductionOrders\OrderHistoryEntry.cs" />
+		<Compile Include="Modules\Employees\ProductionOrders\RecipeChainResolver.cs" />
+		<Compile Include="Modules\Employees\ProductionOrders\OrderSlotLocks.cs" />
+		<Compile Include="Modules\Employees\ProductionOrders\ChemOrderNet.cs" />
+		<Compile Include="Modules\Employees\ProductionOrders\ChemistOrderOrchestrator.cs" />
+		<Compile Include="Modules\Employees\ProductionOrders\ChemistOrderService.cs" />
+		<Compile Include="Modules\Employees\ProductionOrders\ChemistOrderScreen.cs" />
+		<Compile Include="Modules\Employees\Patches\ChemistOrderUpdateBehaviourPatch.cs" />
+		<Compile Include="Modules\Employees\Patches\ChemistOrderDialoguePatch.cs" />
+		<Compile Include="Modules\Employees\Patches\ChemOrderRequestPatch.cs" />
 		<Compile Include="Modules\PhoneApp\ModPhoneApp.cs" />
 		<Compile Include="Modules\PhoneApp\LithiumPhoneApp.cs" />
 		<Compile Include="Modules\PhoneApp\PhoneAppBuilder.cs" />

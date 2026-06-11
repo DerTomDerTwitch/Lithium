@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Il2CppFishNet;
 using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.ItemFramework;
@@ -152,6 +153,7 @@ namespace Lithium.Modules.Rent
             {
                 DiscoverLocations();
                 RebuildLockedFromState();
+                PublishAll();
                 _lastElapsedDay = today;
                 _initialised = true;
             }
@@ -159,6 +161,12 @@ namespace Lithium.Modules.Rent
             // Anchor any property acquired during play immediately, so its "freshly bought" grace status is
             // persisted before a save/reload (or Alt+F4) can happen.
             AnchorNewLocations(today);
+
+            // Credit any rent cash sitting in the dead drops — dropped by ANY player, not just the host.
+            // Tick() is host-only (TimeManager.PassMinute runs only on the server), so this is the
+            // authoritative place to register payment for the whole game; the close-menu patch only gives
+            // the host immediate feedback for its own drops.
+            ScanDeadDropPayments();
 
             if (today == _lastElapsedDay)
                 return;
@@ -257,6 +265,7 @@ namespace Lithium.Modules.Rent
                 RentLocationState state = new RentLocationState();
                 ApplyDueCharges(state, loc, today, establishedAtLoad: false);
                 Store.Set(code, state);
+                PublishState(code, state);
                 Log.Info($"[Rent] Anchored freshly acquired '{prop.PropertyName}' at day {today}; grace applies.");
             }
         }
@@ -275,6 +284,7 @@ namespace Lithium.Modules.Rent
                     state.LastChargedDay = today;
                     RentMessenger.Send(loc, StillLockedMessage(prop, loc, state.Owed));
                     Store.Set(code, state);
+                    PublishState(code, state);
                     continue;
                 }
 
@@ -320,6 +330,7 @@ namespace Lithium.Modules.Rent
                 }
 
                 Store.Set(code, state);
+                PublishState(code, state);
             }
         }
 
@@ -374,6 +385,7 @@ namespace Lithium.Modules.Rent
                     ApplyDueCharges(state, loc, today, establishedAtLoad: false);
 
                 Store.Set(code, state);
+                PublishState(code, state);
 
                 if (state.Owed <= 0f)
                     continue;
@@ -394,85 +406,125 @@ namespace Lithium.Modules.Rent
         private static string ReminderMessage(Property prop, RentLocationConfiguration loc, float owed) =>
             $"Reminder: ${owed:N0} rent still owed for {prop.PropertyName}. Drop it at {loc.DeadDropName}.";
 
+        // Immediate-feedback path: when a player closes a dead-drop menu on the HOST, credit straight away.
+        // Guarded to the server because rent state (the owed balance) only exists on the host, and taking the
+        // cash (CashInstance.SetBalance) must be done by the server to network the removal. A client closing
+        // the menu does nothing here — its drop is instead picked up by ScanDeadDropPayments on the host tick.
         public void ProcessPayment(StorageEntity closed)
         {
-            if (!Configuration.Enabled || closed == null)
+            if (!Configuration.Enabled || closed == null || !InstanceFinder.IsServer)
                 return;
 
             try
             {
                 int closedId = closed.GetInstanceID();
-                DeadDrop drop = null;
                 foreach (DeadDrop dd in DeadDrop.DeadDrops)
                 {
                     if (dd != null && dd.Storage != null && dd.Storage.GetInstanceID() == closedId)
                     {
-                        drop = dd;
-                        break;
+                        CreditFromDrop(dd);
+                        return;
                     }
                 }
-                if (drop == null)
-                    return;
-
-                string dropName = drop.DeadDropName;
-                string dropGuid = drop.GUID.ToString();
-
-                string matchKey = null;
-                RentLocationConfiguration loc = null;
-                foreach (KeyValuePair<string, RentLocationConfiguration> kv in Configuration.Locations)
-                {
-                    RentLocationConfiguration c = kv.Value;
-                    if (!c.Enabled)
-                        continue;
-                    bool match = (!string.IsNullOrEmpty(c.DeadDropGUID) && string.Equals(c.DeadDropGUID, dropGuid, StringComparison.OrdinalIgnoreCase))
-                                 || (string.IsNullOrEmpty(c.DeadDropGUID) && !string.IsNullOrEmpty(c.DeadDropName) && c.DeadDropName == dropName);
-                    if (match)
-                    {
-                        matchKey = kv.Key;
-                        loc = c;
-                        break;
-                    }
-                }
-                if (loc == null)
-                    return;
-
-                Property prop = FindOwned(matchKey);
-                if (prop == null)
-                    return;
-
-                string code = prop.PropertyCode;
-                if (!Store.TryGet(code, out RentLocationState state) || state.Owed <= 0f)
-                    return;
-
-                float paid = TakeCash(drop.Storage, state.Owed);
-                if (paid <= 0f)
-                    return;
-
-                state.Owed -= paid;
-                if (state.Owed < 0.01f)
-                {
-                    state.Owed = 0f;
-                    state.DueSinceDay = -1;
-                    state.WarningSent = false;
-                    bool wasLocked = state.LockedOut;
-                    state.LockedOut = false;
-                    LockedCodes.Remove(code);
-                    RentMessenger.Send(loc, wasLocked
-                        ? $"Rent paid in full for {prop.PropertyName}. Your access is restored."
-                        : $"Received ${paid:N0}. {prop.PropertyName} rent is paid up. Thanks.");
-                }
-                else
-                {
-                    RentMessenger.Send(loc,
-                        $"Received ${paid:N0} toward {prop.PropertyName} rent. Still owed: ${state.Owed:N0} at {loc.DeadDropName}.");
-                }
-
-                Store.Set(code, state);
             }
             catch (Exception e)
             {
                 Log.Warning($"[Rent] Payment processing failed: {e.Message}");
             }
+        }
+
+        // Host-only sweep over every rent dead drop, run each tick from Tick(). This is what makes a payment
+        // "count for the game" rather than only for the host: a dead drop's storage is networked, so the host
+        // sees cash that ANY player dropped — even though that client's local menu-close event never reaches
+        // the host. Without this, only rent the host personally dropped (and closed) would ever be credited.
+        public void ScanDeadDropPayments()
+        {
+            if (!Configuration.Enabled || !InstanceFinder.IsServer)
+                return;
+
+            Il2CppSystem.Collections.Generic.List<DeadDrop> drops = DeadDrop.DeadDrops;
+            if (drops == null)
+                return;
+
+            foreach (DeadDrop dd in drops)
+            {
+                if (dd == null || dd.Storage == null)
+                    continue;
+
+                try
+                {
+                    CreditFromDrop(dd);
+                }
+                catch (Exception e)
+                {
+                    Log.Warning($"[Rent] Dead drop payment scan failed: {e.Message}");
+                }
+            }
+        }
+
+        // Credits any cash sitting in this dead drop against the owed rent of its matching, owned location.
+        // Bails fast (no match / nothing owed / no cash) so it is cheap to call for every drop every tick.
+        // Caller guarantees this runs on the server (see ProcessPayment / ScanDeadDropPayments).
+        private void CreditFromDrop(DeadDrop drop)
+        {
+            if (drop == null || drop.Storage == null)
+                return;
+
+            string dropName = drop.DeadDropName;
+            string dropGuid = drop.GUID.ToString();
+
+            string matchKey = null;
+            RentLocationConfiguration loc = null;
+            foreach (KeyValuePair<string, RentLocationConfiguration> kv in Configuration.Locations)
+            {
+                RentLocationConfiguration c = kv.Value;
+                if (!c.Enabled)
+                    continue;
+                bool match = (!string.IsNullOrEmpty(c.DeadDropGUID) && string.Equals(c.DeadDropGUID, dropGuid, StringComparison.OrdinalIgnoreCase))
+                             || (string.IsNullOrEmpty(c.DeadDropGUID) && !string.IsNullOrEmpty(c.DeadDropName) && c.DeadDropName == dropName);
+                if (match)
+                {
+                    matchKey = kv.Key;
+                    loc = c;
+                    break;
+                }
+            }
+            if (loc == null)
+                return;
+
+            Property prop = FindOwned(matchKey);
+            if (prop == null)
+                return;
+
+            string code = prop.PropertyCode;
+            if (!Store.TryGet(code, out RentLocationState state) || state.Owed <= 0f)
+                return;
+
+            float paid = TakeCash(drop.Storage, state.Owed);
+            if (paid <= 0f)
+                return;
+
+            state.Owed -= paid;
+            if (state.Owed < 0.01f)
+            {
+                state.Owed = 0f;
+                state.DueSinceDay = -1;
+                state.WarningSent = false;
+                bool wasLocked = state.LockedOut;
+                state.LockedOut = false;
+                LockedCodes.Remove(code);
+                RentMessenger.Send(loc, wasLocked
+                    ? $"Rent paid in full for {prop.PropertyName}. Your access is restored."
+                    : $"Received ${paid:N0}. {prop.PropertyName} rent is paid up. Thanks.");
+            }
+            else
+            {
+                RentMessenger.Send(loc,
+                    $"Received ${paid:N0} toward {prop.PropertyName} rent. Still owed: ${state.Owed:N0} at {loc.DeadDropName}.");
+            }
+
+            Store.Set(code, state);
+            PublishState(code, state);
         }
 
         private static float TakeCash(StorageEntity storage, float max)
@@ -500,7 +552,59 @@ namespace Lithium.Modules.Rent
 
         public static bool IsLockedOut(string propertyCode)
         {
-            return !string.IsNullOrEmpty(propertyCode) && LockedCodes.Contains(propertyCode);
+            if (string.IsNullOrEmpty(propertyCode))
+                return false;
+
+            // The lockout decision is made and stored only on the host (Tick is host-only). Clients learn it
+            // through the replicated variable so a non-host player is barred from an unpaid property too.
+            if (!InstanceFinder.IsServer)
+                return HostStateSync.GetBool($"rent_locked_{propertyCode}", false);
+
+            return LockedCodes.Contains(propertyCode);
+        }
+
+        // Host-only: mirror a location's rent state onto the replication channel so clients can enforce the
+        // lockout and show correct figures in the phone app. No-op on clients (SetBool/SetNumber self-guard).
+        private static void PublishState(string code, RentLocationState state)
+        {
+            if (string.IsNullOrEmpty(code) || state == null)
+                return;
+            HostStateSync.SetBool($"rent_locked_{code}", state.LockedOut);
+            HostStateSync.SetNumber($"rent_owed_{code}", state.Owed);
+            HostStateSync.SetNumber($"rent_lastcharged_{code}", state.LastChargedDay);
+            HostStateSync.SetNumber($"rent_duesince_{code}", state.DueSinceDay);
+        }
+
+        // Host-only: re-assert every owned location's current rent state onto the channel. Called on load so
+        // an already-connected client converges without waiting for the next state change.
+        private void PublishAll()
+        {
+            if (!InstanceFinder.IsServer)
+                return;
+            foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
+            {
+                _ = loc;
+                if (Store.TryGet(prop.PropertyCode, out RentLocationState state))
+                    PublishState(prop.PropertyCode, state);
+            }
+        }
+
+        // Resolves the rent state used to build a phone-app view: the host reads its authoritative save store;
+        // a client reconstructs it from the values the host replicated over HostStateSync (its own store is
+        // empty because the rent tick never runs on clients).
+        private bool TryGetViewState(string code, out RentLocationState state)
+        {
+            if (InstanceFinder.IsServer)
+                return Store.TryGet(code, out state);
+
+            state = new RentLocationState
+            {
+                LockedOut = HostStateSync.GetBool($"rent_locked_{code}", false),
+                Owed = HostStateSync.GetNumber($"rent_owed_{code}", 0f),
+                LastChargedDay = (int)HostStateSync.GetNumber($"rent_lastcharged_{code}", -1f),
+                DueSinceDay = (int)HostStateSync.GetNumber($"rent_duesince_{code}", -1f),
+            };
+            return true;
         }
 
         // Read-only snapshot of a rent location for the phone app. Computed on demand from config + the
@@ -538,7 +642,7 @@ namespace Lithium.Modules.Rent
 
             foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
             {
-                bool hasState = Store.TryGet(prop.PropertyCode, out RentLocationState state);
+                bool hasState = TryGetViewState(prop.PropertyCode, out RentLocationState state);
 
                 RentAppView v = new()
                 {

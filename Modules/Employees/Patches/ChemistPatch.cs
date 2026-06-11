@@ -12,8 +12,16 @@ namespace Lithium.Modules.Employees.Patches
             if (!ModEmployees.TryBeginConfigure(__instance, out ModEmployeesConfiguration config))
                 return;
 
-            __instance.configuration.Stations.MaxItems = config.Chemists.MaxStations;
-            __instance.Movement.WalkSpeed = config.Chemists.WalkSpeed;
+            // A freshly hired / not-yet-property-assigned chemist has no configuration yet at this point
+            // (it's created later in AssignProperty), so guard it like the Packager path does.
+            var chemConfig = __instance.configuration;
+            if (chemConfig != null && chemConfig.Stations != null)
+                chemConfig.Stations.MaxItems = config.Chemists.MaxStations;
+            else
+                Log.Warning($"Chemist configuration was null in NetworkInitialize__Late; skipped station caps for {__instance.fullName}.");
+
+            if (__instance.Movement != null)
+                __instance.Movement.WalkSpeed = config.Chemists.WalkSpeed;
             __instance.DailyWage = config.Chemists.DailyWage;
         }
     }

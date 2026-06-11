@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Il2CppFishNet;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Il2CppScheduleOne.DevUtilities;
 using Il2CppScheduleOne.EntityFramework;
@@ -159,6 +160,14 @@ namespace Lithium.Modules.ElectricBill
                     view.PoweredOff = state.PoweredOff;
                     view.OutstandingBill = state.OutstandingBill;
                 }
+                else if (!InstanceFinder.IsServer)
+                {
+                    // Client: the bill tick never ran here, so the save store is empty. Read the power-cut
+                    // status and outstanding amount the host replicated. The live appliance breakdown below
+                    // is still computed locally from the (networked) buildables + the client's own config.
+                    view.PoweredOff = HostStateSync.GetBool($"bill_cut_{propertyCode}", false);
+                    view.OutstandingBill = HostStateSync.GetNumber($"bill_outstanding_{propertyCode}", 0f);
+                }
 
                 float hours = Configuration.BillingIntervalDays * 24f;
                 Dictionary<string, ApplianceLine> grouped = new();
@@ -266,6 +275,7 @@ namespace Lithium.Modules.ElectricBill
             {
                 RefreshApplianceCache();
                 RebuildCutFromState();
+                PublishElectricAll();
                 _lastElapsedDay = today;
                 _initialised = true;
                 return;
@@ -436,6 +446,7 @@ namespace Lithium.Modules.ElectricBill
                     // First sight: anchor the cadence, don't bill the partial week.
                     state.LastBilledDay = today;
                     Store.Set(code, state);
+                    PublishElectric(code, state);
                     continue;
                 }
 
@@ -453,7 +464,29 @@ namespace Lithium.Modules.ElectricBill
                 }
 
                 Store.Set(code, state);
+                PublishElectric(code, state);
             }
+        }
+
+        // Host-only: mirror a property's power-cut status and outstanding bill onto the replication channel so
+        // a client's phone app shows them. No-op on clients (SetBool/SetNumber self-guard). The live appliance
+        // breakdown is computed client-side and needs no replication.
+        private static void PublishElectric(string code, ElectricBillState state)
+        {
+            if (string.IsNullOrEmpty(code) || state == null)
+                return;
+            HostStateSync.SetBool($"bill_cut_{code}", state.PoweredOff);
+            HostStateSync.SetNumber($"bill_outstanding_{code}", state.OutstandingBill);
+        }
+
+        // Host-only: re-assert every owned property's power state onto the channel (used on load).
+        private void PublishElectricAll()
+        {
+            if (!InstanceFinder.IsServer)
+                return;
+            foreach (string code in _ownedByCode.Keys)
+                if (Store.TryGet(code, out ElectricBillState state))
+                    PublishElectric(code, state);
         }
 
         private void BillOnce(Property prop, ElectricBillState state)
