@@ -4,6 +4,7 @@ using Il2CppScheduleOne.GameTime;
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.UI.Phone.Messages;
 using Lithium.Helper;
+using Lithium.Modules.Customers.Architecture;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -29,6 +30,11 @@ namespace Lithium.Modules.PhoneApp
         private static readonly Color HeaderColor = new(0.70f, 0.80f, 1f);
         private static readonly Color Gray = new(0.72f, 0.72f, 0.74f);
 
+        // Completed rows are rendered faded; shifted (catch-up) rows get a small inline tag.
+        private const float DoneAlpha = 0.42f;
+        private const string DoneCheckHex = "#82E07A";   // green tick before a completed name
+        private const string ShiftedTagHex = "#9FB7E0";  // muted blue "(shifted)" suffix
+
         private sealed class Row
         {
             public string Name;
@@ -36,6 +42,8 @@ namespace Lithium.Modules.PhoneApp
             public EQuality Quality;
             public int QuantityLevel; // 1 = low (orders often), 2 = mid, 3 = high (weekly bulk)
             public int OrderTime;     // 24h time, for chronological sorting
+            public bool Done;         // already completed their order today
+            public bool Shifted;      // pulled into today by the sleep catch-up (not a normal order day)
         }
 
         private GameObject _content;
@@ -115,7 +123,9 @@ namespace Lithium.Modules.PhoneApp
 
                 List<Row> rows = GatherToday(today);
 
-                AddLine($"<b>Ordering today ({rows.Count}) — {today}</b>", 30, HeaderColor, 40f);
+                int doneCount = rows.Count(r => r.Done);
+                string doneSuffix = doneCount > 0 ? $" · {doneCount} done" : string.Empty;
+                AddLine($"<b>Ordering today ({rows.Count}) — {today}{doneSuffix}</b>", 30, HeaderColor, 40f);
                 AddLine("Stars: count = order size, colour = desired quality", 20, Gray, 28f);
                 _y -= 6f;
 
@@ -144,13 +154,21 @@ namespace Lithium.Modules.PhoneApp
                     continue;
 
                 CustomerData data = customer.CustomerData;
+                string key = data.name;
                 float relation = customer.NPC.RelationData != null
                     ? customer.NPC.RelationData.RelationDelta / 5f
                     : 0f;
 
                 // Same arguments the game uses in Customer.IsDealTime for unlocked customers.
                 List<EDay> days = data.GetOrderDays(customer.CurrentAddiction, relation).ToList();
-                if (!days.Contains(today))
+
+                bool normalToday = days.Contains(today);
+                bool caughtUp = DailyOrderTracker.CaughtUpToday(key);   // order shifted in by the sleep catch-up
+                bool done = DailyOrderTracker.CompletedToday(key);      // already served today
+
+                // List a customer if they normally order today, were shifted into today, or already
+                // completed today's order (so the served row still shows, faded).
+                if (!normalToday && !caughtUp && !done)
                     continue;
 
                 rows.Add(new Row
@@ -159,13 +177,21 @@ namespace Lithium.Modules.PhoneApp
                     Mugshot = customer.NPC.MugshotSprite,
                     Quality = CorrespondingQuality(data.Standards),
                     QuantityLevel = days.Count >= 3 ? 1 : days.Count == 2 ? 2 : 3,
-                    OrderTime = data.OrderTime
+                    OrderTime = data.OrderTime,
+                    Done = done,
+                    Shifted = caughtUp && !normalToday
                 });
             }
 
-            rows.Sort((a, b) => a.OrderTime != b.OrderTime
-                ? a.OrderTime.CompareTo(b.OrderTime)
-                : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            // Completed orders sink to the bottom; the rest stay in chronological order-time order.
+            rows.Sort((a, b) =>
+            {
+                if (a.Done != b.Done)
+                    return a.Done ? 1 : -1;
+                if (a.OrderTime != b.OrderTime)
+                    return a.OrderTime.CompareTo(b.OrderTime);
+                return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+            });
             return rows;
         }
 
@@ -228,7 +254,9 @@ namespace Lithium.Modules.PhoneApp
             rt.pivot = new Vector2(0.5f, 1f);
             rt.sizeDelta = new Vector2(-2f * Pad, RowHeight);
             rt.anchoredPosition = new Vector2(0f, _y);
-            go.AddComponent<Image>().color = RowColor;
+
+            float alpha = row.Done ? DoneAlpha : 1f;
+            go.AddComponent<Image>().color = new Color(RowColor.r, RowColor.g, RowColor.b, RowColor.a * alpha);
 
             if (row.Mugshot != null)
             {
@@ -244,6 +272,7 @@ namespace Lithium.Modules.PhoneApp
                 Image img = mug.AddComponent<Image>();
                 img.sprite = row.Mugshot;
                 img.preserveAspect = true;
+                img.color = new Color(1f, 1f, 1f, alpha);
             }
 
             Text name = PhoneAppBuilder.MakeText(go.transform, _font, "Name", 26, Color.white,
@@ -253,7 +282,13 @@ namespace Lithium.Modules.PhoneApp
             nrt.anchorMax = new Vector2(1f, 1f);
             nrt.offsetMin = new Vector2(MugshotSize + 16f, 0f);
             nrt.offsetMax = new Vector2(-(3f * StarStep + 10f), 0f);
-            name.text = row.Name;
+            name.color = new Color(1f, 1f, 1f, alpha);
+            if (row.Done)
+                name.text = $"<color={DoneCheckHex}>✓</color> {row.Name}";       // green tick = served
+            else if (row.Shifted)
+                name.text = $"{row.Name}  <size=18><color={ShiftedTagHex}>(shifted)</color></size>";
+            else
+                name.text = row.Name;
 
             Sprite star = ResolveStarSprite();
             if (star != null)
@@ -272,7 +307,8 @@ namespace Lithium.Modules.PhoneApp
                     Image img = s.AddComponent<Image>();
                     img.sprite = star;
                     img.preserveAspect = true;
-                    img.color = QualityColor(row.Quality);
+                    Color qc = QualityColor(row.Quality);
+                    img.color = new Color(qc.r, qc.g, qc.b, alpha);
                 }
             }
             else
@@ -284,6 +320,7 @@ namespace Lithium.Modules.PhoneApp
                 srt.anchorMax = new Vector2(1f, 1f);
                 srt.offsetMin = Vector2.zero;
                 srt.offsetMax = new Vector2(-6f, 0f);
+                stars.color = new Color(1f, 1f, 1f, alpha);
                 stars.text = $"<color={QualityHex(row.Quality)}>{new string('★', row.QuantityLevel)}</color>";
             }
 

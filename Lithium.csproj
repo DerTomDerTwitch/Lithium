@@ -558,6 +558,7 @@
 		<Compile Include="Modules\Warehouse\Patches\DarkMarketInteriorAccessPatch.cs" />
 		<Compile Include="Modules\Customers\Architecture\BonusPaymentHandler.cs" />
 		<Compile Include="Modules\Customers\Architecture\ContractRetryTracker.cs" />
+		<Compile Include="Modules\Customers\Architecture\DailyOrderTracker.cs" />
 		<Compile Include="Modules\Customers\Architecture\OrderPatternProfile.cs" />
 		<Compile Include="Modules\Customers\Architecture\OfferAcceptanceWindow.cs" />
 		<Compile Include="Modules\Customers\Architecture\OfferTimingGate.cs" />
@@ -592,7 +593,9 @@
 		<Compile Include="Modules\Customers\Patches\CustomerOfferDeadlineMessagePatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerDailyNotificationPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerGetOrderDaysPatch.cs" />
+		<Compile Include="Modules\Customers\Patches\CustomerMissedOrderCatchupPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerOfferSuccessPatch.cs" />
+		<Compile Include="Modules\Customers\Patches\CustomerCompletionTrackPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerProcessHandoverPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerSampleConsumedPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\ProductListingPatch.cs" />

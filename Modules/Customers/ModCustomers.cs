@@ -191,6 +191,17 @@ namespace Lithium.Modules.Customers
 
         public float BulkOrderSizeFactor { get; set; } = 1.0f;
 
+        /// <summary>
+        /// When a sleep / time-skip jumps clean over a customer's order window on one of their order
+        /// days, re-offer that missed order the morning the player wakes into. This is a one-time
+        /// catch-up that does NOT alter <see cref="OrderPatternProfile"/> / GetOrderDays, so the
+        /// recurring cadence stays anchored to its normal days (the order does not permanently shift
+        /// forward by a day). Bulk (once-weekly) customers benefit most: without this, a single
+        /// slept-through night means they do not order at all that week. Handled by
+        /// <c>CustomerMissedOrderCatchupPatch</c>.
+        /// </summary>
+        public bool CatchUpMissedOrders { get; set; } = true;
+
         public OrderPatternWeights ArchetypeWeights { get; set; } = new OrderPatternWeights();
 
         public bool AnnounceNextOrder { get; set; } = true;
@@ -319,6 +330,7 @@ namespace Lithium.Modules.Customers
             DealerCoverageNotifier.ResetNoDealer();
             ContractRetryTracker.Unload();
             OfferDeadlineTracker.Unload();
+            DailyOrderTracker.Unload();
             OrderPatternProfile.ClearCache();
             Patches.CustomerContractGenerationPatch.ResetState();
 
