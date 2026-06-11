@@ -416,3 +416,8 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Persistent IL2CPP decompile (regenerate via the command in CLAUDE.md, not committed)
+/Decompiled/
+# Ad-hoc scratch decompiles — superseded by /Decompiled/
+_*_decomp.cs

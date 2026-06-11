@@ -35,6 +35,7 @@ namespace Lithium.Modules.Products
         private static int _appId;
         private static bool _built;
 
+        private static GameObject _bar;
         private static InputField _searchInput;
         private static Text _effectsButtonLabel;
         private static GameObject _effectsPanel;
@@ -49,6 +50,7 @@ namespace Lithium.Modules.Products
             _app = null;
             _appId = 0;
             _built = false;
+            _bar = null;
             _searchInput = null;
             _effectsButtonLabel = null;
             _effectsPanel = null;
@@ -87,11 +89,25 @@ namespace Lithium.Modules.Products
                 _appId = id;
                 _built = true;
                 ApplyFilter();
+                // The bar lives under the app container, but the container's active-state doesn't reliably
+                // hide it across the phone's app-switch/rebuild dance — gate it explicitly on isOpen so it
+                // never lingers on the home screen or other phone apps.
+                SetVisible(app.isOpen);
             }
             catch (Exception e)
             {
                 Log.Error($"[Lithium] Products filter build failed: {e}");
             }
+        }
+
+        // Shows/hides the whole filter bar (search field + effects button) and collapses the effects panel.
+        // Driven from the Products app's open/close so the overlay is only ever visible on that app.
+        public static void SetVisible(bool visible)
+        {
+            if (_bar != null && _bar.activeSelf != visible)
+                _bar.SetActive(visible);
+            if (!visible && _effectsPanel != null && _effectsPanel.activeSelf)
+                _effectsPanel.SetActive(false);
         }
 
         private static void Build(ProductManagerApp app)
@@ -109,6 +125,7 @@ namespace Lithium.Modules.Products
 
             // --- Top bar -----------------------------------------------------------------------------
             GameObject bar = ProductFilterUi.MakeImage(container, "LithiumProductFilterBar", BarColor);
+            _bar = bar;
             RectTransform brt = bar.GetComponent<RectTransform>();
             brt.anchorMin = new Vector2(0f, 1f);
             brt.anchorMax = new Vector2(1f, 1f);

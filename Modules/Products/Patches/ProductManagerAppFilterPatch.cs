@@ -20,10 +20,15 @@ namespace Lithium.Modules.Products.Patches
         [HarmonyPatch(nameof(ProductManagerApp.SetOpen))]
         private static void SetOpenPostfix(ProductManagerApp __instance, bool open)
         {
+            // Hide the bar whenever the app closes so it can't linger over the home screen / other apps.
             if (!open)
+            {
+                ProductListFilter.SetVisible(false);
                 return;
+            }
             ProductListFilter.EnsureBuilt(__instance);
             ProductListFilter.ApplyFilter();
+            ProductListFilter.SetVisible(true);
         }
 
         // Late discoveries create a new entry after the bar is built — re-apply so it respects the
