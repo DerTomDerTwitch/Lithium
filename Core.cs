@@ -1,8 +1,4 @@
-﻿using Il2CppScheduleOne.Economy;
-using Il2CppScheduleOne.ItemFramework;
-using Il2CppScheduleOne.Vehicles;
-using Lithium.Helper;
-using Lithium.Modules;
+﻿using Lithium.Modules;
 using Lithium.Modules.Banking;
 using Lithium.Modules.BrickPress;
 using Lithium.Modules.ChemistryStation;
@@ -31,11 +27,14 @@ using Lithium.Modules.Warehouse;
 using Lithium.Modules.WateringCans;
 using Lithium.Modules.Weapons;
 using MelonLoader;
-using UnityEngine;
 
 [assembly: MelonInfo(typeof(Lithium.Core), "Lithium", "1.3.0", "DerTomDer & YukiSora", null)]
 [assembly: MelonGame("TVGS", "Schedule I")]
 [assembly: MelonPlatformDomain(MelonPlatformDomainAttribute.CompatibleDomains.IL2CPP)]
+// Soft dependency: the in-game debug menu (LithiumModMenu) is hosted by the "Mod Manager & Phone App"
+// mod. Declaring it optional makes MelonLoader load that mod first when present, so our reflection hook
+// resolves reliably — but Lithium (and all its gameplay modules) still load if it is absent.
+[assembly: MelonOptionalDependencies("ModManager&PhoneApp")]
                                                                               
 namespace Lithium
 {
@@ -90,12 +89,16 @@ namespace Lithium
             HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("com.lithium");
             harmony.PatchAll();
 
+            // Surface the debug toggle + authoring actions in the in-game Mod Manager app.
+            LithiumModMenu.Initialize();
+
             Log.Info("Lithium initialized");
         }
 
         private bool _isFirstStart = true;
 
-        private bool _sceneIsMain;
+        /// <summary>True while a save is loaded (scene == "Main"). Read by LithiumModMenu actions.</summary>
+        public static bool IsInMainScene { get; private set; }
 
         public override void OnSceneWasInitialized(int buildIndex, string sceneName)
         {
@@ -108,16 +111,19 @@ namespace Lithium
                 }
 
                 _isFirstStart = false;
-                _sceneIsMain = true;
+                IsInMainScene = true;
             }
             else if (sceneName.Equals("Menu", StringComparison.OrdinalIgnoreCase) && !_isFirstStart)
             {
                 _isFirstStart = true;
-                _sceneIsMain = false;
+                IsInMainScene = false;
             }
         }
 
-        public void ReloadConfiguration()
+        /// <summary>Invoked by MelonLoader whenever MelonPreferences are saved (e.g. the Mod Manager app's Save button).</summary>
+        public override void OnPreferencesSaved() => LithiumModMenu.OnPreferencesSaved();
+
+        public static void ReloadConfiguration()
         {
             Log.Warning("[Lithium] Reloading all configuration...");
 
@@ -135,7 +141,7 @@ namespace Lithium
                 }
             }
 
-            if (_sceneIsMain)
+            if (IsInMainScene)
             {
                 foreach (ModuleBase module in Modules)
                 {
@@ -150,7 +156,7 @@ namespace Lithium
                 }
             }
 
-            Log.Warning(_sceneIsMain
+            Log.Warning(IsInMainScene
                 ? "[Lithium] Configuration reloaded and reapplied."
                 : "[Lithium] Configuration reloaded (no save loaded — runtime reapply skipped).");
         }
@@ -161,65 +167,6 @@ namespace Lithium
 
             Get<ModPhoneApp>()?.DriveUpdate();
             Get<ModPolice>()?.DriveUpdate();
-
-            LithiumConfig config = LithiumConfig.Instance;
-
-            if (Input.GetKeyDown(KeyCode.F8))
-            {
-                bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
-                bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-
-                if (ctrl && shift)
-                {
-                    if (config.HotkeyCtrlShiftF8ReloadConfig)
-                        ReloadConfiguration();
-                }
-                else if (config.HotkeyF8RentDump)
-                {
-                    RentDebug.Dump();
-                }
-            }
-
-            if (config.HotkeyF9BuildablesDump && Input.GetKeyDown(KeyCode.F9))
-            {
-                BuildablesDebug.Dump();
-            }
-
-            if (config.HotkeyF10RVFurnitureDump && Input.GetKeyDown(KeyCode.F10))
-            {
-                RVFurnitureDebug.Dump();
-            }
-
-            if (config.HotkeyF5ExpandVeeperStorage && Input.GetKeyDown(KeyCode.F5))
-            {
-                LandVehicle[] array2 = VehicleManager.Instance.AllVehicles.ToArray()
-                    .Where(v => v.IsPlayerOwned)
-                    .Where(v => v.VehicleCode == "veeper")
-                    .ToArray();
-                foreach (LandVehicle vehicle in array2)
-                {
-                    vehicle.Storage.SlotCount = 20;
-                    for (int i = vehicle.Storage.ItemSlots.Count; i <= vehicle.Storage.SlotCount; i++)
-                    {
-                        vehicle.Storage.ItemSlots.Add(new());
-                    }
-                }
-            }
-
-            if (config.HotkeyF6OrderPatternDump && Input.GetKeyDown(KeyCode.F6))
-            {
-                OrderPatternDebug.Dump();
-            }
-
-            if (config.HotkeyF7NpcRosterDump && Input.GetKeyDown(KeyCode.F7))
-            {
-                NpcRosterDebug.Dump();
-            }
-
-            if (config.HotkeyF11PoliceScanDump && Input.GetKeyDown(KeyCode.F11))
-            {
-                Lithium.Modules.Police.PropertyContraband.PoliceContrabandDebug.Dump();
-            }
         }
     }
 }

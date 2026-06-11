@@ -10,17 +10,9 @@ namespace Lithium
 
         public bool Debug = false;
 
-        // Per-hotkey gates. Each authoring/debug hotkey in Core.OnUpdate only fires when its flag is on.
-        // The config-reload hotkey defaults on (broadly useful for live config editing); the rest are
-        // opt-in authoring/dump tools that default off.
-        public bool HotkeyCtrlShiftF8ReloadConfig = true; // Ctrl+Shift+F8 — reload & reapply all configs
-        public bool HotkeyF8RentDump = false;             // F8 — RentDebug.Dump
-        public bool HotkeyF9BuildablesDump = false;       // F9 — BuildablesDebug.Dump
-        public bool HotkeyF10RVFurnitureDump = false;     // F10 — RVFurnitureDebug.Dump
-        public bool HotkeyF5ExpandVeeperStorage = false;  // F5 — expand Veeper storage
-        public bool HotkeyF6OrderPatternDump = false;     // F6 — OrderPatternDebug.Dump
-        public bool HotkeyF7NpcRosterDump = false;        // F7 — NpcRosterDebug.Dump
-        public bool HotkeyF11PoliceScanDump = false;      // F11 — PoliceContrabandDebug.Dump (opt-in)
+        // Authoring/debug actions and the debug-logging toggle now live in the in-game Mod Manager app
+        // (see LithiumModMenu). The old per-hotkey gate fields were removed; legacy keys in an existing
+        // Lithium.json are simply ignored by JsonConvert and dropped on the next Save.
 
         private static string ConfigFolder => Path.Combine(MelonEnvironment.UserDataDirectory, "Lithium");
         private static string FilePath => Path.Combine(ConfigFolder, "Lithium.json");

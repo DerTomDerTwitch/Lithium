@@ -487,6 +487,7 @@
 	<ItemGroup>
 		<Compile Include="Core.cs" />
 		<Compile Include="LithiumConfig.cs" />
+		<Compile Include="LithiumModMenu.cs" />
 		<Compile Include="Log.cs" />
 		<Compile Include="Helper\CollectionConverter.cs" />
 		<Compile Include="Helper\ConfigValidator.cs" />

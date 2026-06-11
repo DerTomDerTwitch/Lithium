@@ -12,6 +12,7 @@ using Il2CppScheduleOne.Property;
 using Il2CppScheduleOne.Storage;
 using Lithium.Helper;
 using Lithium.Modules.Customers.Architecture;
+using Lithium.Modules.ElectricBill;
 using MelonLoader;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -35,15 +36,16 @@ namespace Lithium.Modules.Rent
     {
         public override string Name => "Rent";
 
+        // The rent period: in-game days between rent charges. Each location's first charge lands one full
+        // period after it's acquired (the first period is always free), then every period after. Lower this
+        // (e.g. to 1) to test the overdue texts / lockout quickly.
         [JsonProperty(Order = 1)] public int RentIntervalDays = 7;
 
         [JsonProperty(Order = 2)] public int DaysUntilLockout = 2;
 
         [JsonProperty(Order = 3)] public bool SendFinalWarning = true;
 
-        [JsonProperty(Order = 4)] public int FreshPurchaseGraceDays = 3;
-
-        [JsonProperty(Order = 5)] public Dictionary<string, RentLocationConfiguration> Locations = new()
+        [JsonProperty(Order = 4)] public Dictionary<string, RentLocationConfiguration> Locations = new()
         {
             ["RV"] = new(),
             ["Sweatshop"] = new() { Enabled = true, WeeklyRent = 200f, DeadDropName = "North arcade wall", DeadDropGUID = "dd3d22f1-da56-4673-9203-640eeaf915fc", ContactNpcName = "Mrs. Ming" },
@@ -64,7 +66,6 @@ namespace Lithium.Modules.Rent
         {
             RentIntervalDays = ConfigValidator.AtLeast(Name, nameof(RentIntervalDays), RentIntervalDays, 1);
             DaysUntilLockout = ConfigValidator.AtLeast(Name, nameof(DaysUntilLockout), DaysUntilLockout, 0);
-            FreshPurchaseGraceDays = ConfigValidator.AtLeast(Name, nameof(FreshPurchaseGraceDays), FreshPurchaseGraceDays, 0);
 
             foreach (string key in Locations.Keys.ToList())
             {
@@ -212,7 +213,7 @@ namespace Lithium.Modules.Rent
                             continue;
 
                         RentLocationState reset = new RentLocationState();
-                        ApplyDueCharges(reset, loc, today, establishedAtLoad: false);
+                        ApplyDueCharges(reset, loc, today);
                         Store.Set(code, reset);
                         migrated++;
                     }
@@ -233,7 +234,7 @@ namespace Lithium.Modules.Rent
                     RentLocationState state = new RentLocationState();
                     // First-week-free: pre-existing properties are anchored like a fresh purchase (no immediate
                     // charge); the first rent lands one interval from now.
-                    ApplyDueCharges(state, loc, today, establishedAtLoad: true);
+                    ApplyDueCharges(state, loc, today);
                     Store.Set(code, state);
                     established++;
                 }
@@ -263,11 +264,70 @@ namespace Lithium.Modules.Rent
                     continue;
 
                 RentLocationState state = new RentLocationState();
-                ApplyDueCharges(state, loc, today, establishedAtLoad: false);
+                ApplyDueCharges(state, loc, today);
                 Store.Set(code, state);
                 PublishState(code, state);
-                Log.Info($"[Rent] Anchored freshly acquired '{prop.PropertyName}' at day {today}; grace applies.");
+                Log.Info($"[Rent] Anchored freshly acquired '{prop.PropertyName}' at day {today}; first period free.");
             }
+        }
+
+        // Debug/testing hotkey (F12): force every enabled, owned rent location into lockout immediately — no
+        // waiting for the cadence — and text the contact, so both the lockout enforcement (e.g. the motel's
+        // exterior door) and the messaging path can be verified in one press. Toggles: a second press clears
+        // the lockout and the test debt, restoring access. Host-only (rent state lives on the host).
+        public void DebugToggleLockout()
+        {
+            if (!Configuration.Enabled)
+            {
+                Log.Warning("[Rent] Lockout test ignored: the Rent module is disabled.");
+                return;
+            }
+            if (!InstanceFinder.IsServer)
+            {
+                Log.Warning("[Rent] Lockout test ignored: only the host can change rent state.");
+                return;
+            }
+
+            int today = TimeManager.Instance?.ElapsedDays ?? 0;
+            int affected = 0;
+
+            foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
+            {
+                string code = prop.PropertyCode;
+                if (string.IsNullOrEmpty(code))
+                    continue;
+
+                RentLocationState state = Store.TryGet(code, out RentLocationState s) ? s : new RentLocationState();
+
+                if (state.LockedOut)
+                {
+                    state.LockedOut = false;
+                    state.Owed = 0f;
+                    state.DueSinceDay = -1;
+                    state.WarningSent = false;
+                    LockedCodes.Remove(code);
+                    RentMessenger.Send(loc, $"[TEST] Lockout cleared for {prop.PropertyName}. Your access is restored.");
+                }
+                else
+                {
+                    if (state.Owed <= 0f)
+                        state.Owed = loc.WeeklyRent > 0f ? loc.WeeklyRent : 1f;
+                    if (state.DueSinceDay < 0)
+                        state.DueSinceDay = today;
+                    state.LockedOut = true;
+                    LockedCodes.Add(code);
+                    RentMessenger.Send(loc,
+                        $"[TEST] You're locked out of {prop.PropertyName}. Pay the ${state.Owed:N0} you owe at {loc.DeadDropName} to get back in.");
+                }
+
+                Store.Set(code, state);
+                PublishState(code, state);
+                affected++;
+            }
+
+            Log.Warning(affected > 0
+                ? $"[Rent] Lockout test toggled {affected} owned, rent-enabled location(s)."
+                : "[Rent] Lockout test: no owned, rent-enabled locations found (own the property and enable its rent first).");
         }
 
         private void ProcessDay(int today)
@@ -288,7 +348,7 @@ namespace Lithium.Modules.Rent
                     continue;
                 }
 
-                bool charged = ApplyDueCharges(state, loc, today, establishedAtLoad: false);
+                bool charged = ApplyDueCharges(state, loc, today);
 
                 bool messaged = false;
 
@@ -334,19 +394,16 @@ namespace Lithium.Modules.Rent
             }
         }
 
-        private bool ApplyDueCharges(RentLocationState state, RentLocationConfiguration loc, int today, bool establishedAtLoad)
+        private bool ApplyDueCharges(RentLocationState state, RentLocationConfiguration loc, int today)
         {
             if (state.LastChargedDay < 0)
             {
-                int interval = Configuration.RentIntervalDays;
-                // Both pre-existing (baseline) and freshly-bought properties get a free first week: anchor the
-                // cadence at/after today so the first charge lands one full interval from now, never immediately.
-                // (Previously baseline backdated LastChargedDay by one interval and billed on first sight, which
-                // made a property read "overdue" on e.g. day 3 even though ProcessDay had never run for the
-                // backdated days to enforce a lockout — the display/enforcement mismatch the user hit.)
-                // establishedAtLoad is kept for call-site clarity but no longer changes the anchor.
-                _ = establishedAtLoad;
-                state.LastChargedDay = today + (Configuration.FreshPurchaseGraceDays / interval) * interval;
+                // First sight (pre-existing or freshly bought): anchor the cadence to today so the first
+                // charge lands exactly one rent period from now — the first period is always free, never
+                // billed on the spot. This keeps the displayed "next due" date and the lockout enforcement
+                // in lock-step (the old logic backdated the anchor and billed immediately, while ProcessDay
+                // had never run the intervening days, so a property read "overdue" with no matching lockout).
+                state.LastChargedDay = today;
             }
 
             bool charged = false;
@@ -382,7 +439,7 @@ namespace Lithium.Modules.Rent
                 RentLocationState state = Store.TryGet(code, out RentLocationState s) ? s : new RentLocationState();
 
                 if (!state.LockedOut)
-                    ApplyDueCharges(state, loc, today, establishedAtLoad: false);
+                    ApplyDueCharges(state, loc, today);
 
                 Store.Set(code, state);
                 PublishState(code, state);
@@ -497,34 +554,53 @@ namespace Lithium.Modules.Rent
                 return;
 
             string code = prop.PropertyCode;
-            if (!Store.TryGet(code, out RentLocationState state) || state.Owed <= 0f)
-                return;
 
-            float paid = TakeCash(drop.Storage, state.Owed);
-            if (paid <= 0f)
-                return;
-
-            state.Owed -= paid;
-            if (state.Owed < 0.01f)
+            // 1) Rent — take cash up to what's owed for this location.
+            if (Store.TryGet(code, out RentLocationState state) && state.Owed > 0f)
             {
-                state.Owed = 0f;
-                state.DueSinceDay = -1;
-                state.WarningSent = false;
-                bool wasLocked = state.LockedOut;
-                state.LockedOut = false;
-                LockedCodes.Remove(code);
-                RentMessenger.Send(loc, wasLocked
-                    ? $"Rent paid in full for {prop.PropertyName}. Your access is restored."
-                    : $"Received ${paid:N0}. {prop.PropertyName} rent is paid up. Thanks.");
-            }
-            else
-            {
-                RentMessenger.Send(loc,
-                    $"Received ${paid:N0} toward {prop.PropertyName} rent. Still owed: ${state.Owed:N0} at {loc.DeadDropName}.");
+                float paid = TakeCash(drop.Storage, state.Owed);
+                if (paid > 0f)
+                {
+                    state.Owed -= paid;
+                    if (state.Owed < 0.01f)
+                    {
+                        state.Owed = 0f;
+                        state.DueSinceDay = -1;
+                        state.WarningSent = false;
+                        bool wasLocked = state.LockedOut;
+                        state.LockedOut = false;
+                        LockedCodes.Remove(code);
+                        RentMessenger.Send(loc, wasLocked
+                            ? $"Rent paid in full for {prop.PropertyName}. Your access is restored."
+                            : $"Received ${paid:N0}. {prop.PropertyName} rent is paid up. Thanks.");
+                    }
+                    else
+                    {
+                        RentMessenger.Send(loc,
+                            $"Received ${paid:N0} toward {prop.PropertyName} rent. Still owed: ${state.Owed:N0} at {loc.DeadDropName}.");
+                    }
+
+                    Store.Set(code, state);
+                    PublishState(code, state);
+                }
             }
 
-            Store.Set(code, state);
-            PublishState(code, state);
+            // 2) Power bill — the phone app shows rent and electricity together per property, so the same
+            // dead drop also settles any outstanding power bill (what the bank auto-deduct couldn't cover).
+            // Without this, cash meant for the power bill would sit in the drop, ignored. Rent is taken first;
+            // whatever cash remains pays down the bill and restores power if it clears. No-op when the
+            // ElectricBill module is off or nothing is outstanding.
+            ModElectricBill electric = Core.Get<ModElectricBill>();
+            if (electric != null)
+            {
+                float outstanding = electric.GetOutstandingBill(code);
+                if (outstanding > 0f)
+                {
+                    float billPaid = TakeCash(drop.Storage, outstanding);
+                    if (billPaid > 0f)
+                        electric.ApplyCashPayment(prop, billPaid);
+                }
+            }
         }
 
         private static float TakeCash(StorageEntity storage, float max)

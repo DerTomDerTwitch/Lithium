@@ -118,6 +118,45 @@ namespace Lithium.Modules.ElectricBill
         public static bool IsPowerCut(string propertyCode) =>
             !string.IsNullOrEmpty(propertyCode) && PowerCutCodes.Contains(propertyCode);
 
+        // Host-only read of a property's outstanding (unpaid) power bill — what the bank auto-deduct couldn't
+        // cover. Used by the Rent dead-drop payment path so cash dropped there can also clear the power bill.
+        public float GetOutstandingBill(string propertyCode)
+        {
+            if (!Configuration.Enabled || string.IsNullOrEmpty(propertyCode) || !InstanceFinder.IsServer)
+                return 0f;
+            return Store.TryGet(propertyCode, out ElectricBillState state) ? state.OutstandingBill : 0f;
+        }
+
+        // Host-only: register a cash payment (collected at the rent dead drop) against this property's
+        // outstanding power bill, restoring power if it clears. The normal billing path deducts from the bank;
+        // this lets the player settle the bill in cash when the bank can't cover it. The caller has already
+        // taken the cash from the drop, so this only adjusts the bill and power state.
+        public void ApplyCashPayment(Property prop, float amount)
+        {
+            if (!Configuration.Enabled || prop == null || amount <= 0f || !InstanceFinder.IsServer)
+                return;
+
+            string code = prop.PropertyCode;
+            if (string.IsNullOrEmpty(code) || !Store.TryGet(code, out ElectricBillState state) || state.OutstandingBill <= 0f)
+                return;
+
+            state.OutstandingBill = Math.Max(0f, state.OutstandingBill - amount);
+            if (state.OutstandingBill < 0.01f)
+            {
+                state.OutstandingBill = 0f;
+                if (state.PoweredOff)
+                    RestorePower(prop, state);
+                ElectricBillNotifier.Send("Power bill paid", $"{prop.PropertyName}: ${amount:N2} settled in cash");
+            }
+            else
+            {
+                ElectricBillNotifier.Send("Power bill — partial", $"{prop.PropertyName}: ${amount:N2} paid, ${state.OutstandingBill:N2} left");
+            }
+
+            Store.Set(code, state);
+            PublishElectric(code, state);
+        }
+
         // One grouped appliance line for the phone app's electric table.
         public sealed class ApplianceLine
         {

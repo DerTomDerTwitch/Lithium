@@ -22,16 +22,13 @@ and optional `DeadDropGUID` (used in preference to name when two drops share a n
 - `ContactNpcName`: full NPC display name; defaults to `"Fixer"`.
 
 **`ModRentConfiguration`** — module-level:
-- `RentIntervalDays` (default 7): in-game days between charges; each location's cadence is anchored to
-  when it was first seen owned.
+- `RentIntervalDays` (default 7): the **rent period** — in-game days between charges. Each location's
+  cadence is anchored to the day it was first seen owned, and the **first period is always free** (the
+  first charge lands one full period later, never on the spot). Lower this (e.g. to `1`) to test the
+  overdue texts / lockout quickly.
 - `DaysUntilLockout` (default 2): days after rent becomes due before the property is locked; 0 = lock
   immediately.
 - `SendFinalWarning` (default true): if true, a final-warning text is sent the day *before* lockout.
-- `FreshPurchaseGraceDays` (default 3): days of "paid" rent a freshly bought property gets before rent
-  applies. A property bought during play isn't charged for the period it was bought in — its first rent
-  lands one full interval later. Any whole interval that fits inside the grace period is also pre-skipped
-  (only matters when `RentIntervalDays` is shorter than the grace). Properties already owned when the
-  save loads are unaffected — billed immediately.
 - `Locations`: pre-seeded dictionary with default dead-drop and contact assignments for every known
   in-game property/business; any unlisted location is auto-discovered (disabled, $0) the first time a
   save loads.
@@ -48,18 +45,27 @@ fresh from its own file.
 memory so the door-access patch (called very frequently, once per minute at minimum) never touches disk.
 It is rebuilt from the persisted state on the first tick after a save loads (`RebuildLockedFromState`).
 
-### Established vs freshly-bought distinction (`_establishedAtLoad`)
+### First period free (anchoring)
 
-On first sight of a location, the cadence anchor is set differently depending on whether the property
-was already owned when the save loaded ("established") or was bought during play ("freshly bought"):
-- **Established**: anchored one interval in the past, so the current week's rent bills immediately.
-- **Freshly bought**: anchored to today, deferring the first charge a full interval. Any whole interval
-  fitting inside `FreshPurchaseGraceDays` is pre-skipped too.
+On first sight of a location — whether it was already owned when the save loaded or bought during play —
+the cadence anchor (`LastChargedDay`) is set to **today**, so the first charge lands exactly one
+`RentIntervalDays` later and the first period is free. The anchor is persisted, so the choice is made
+once per location and never re-evaluated on later loads. (Earlier logic backdated the anchor and billed
+pre-existing properties on first sight; that made a property read "overdue" before `ProcessDay` had run
+the intervening days, so the displayed status and the lockout enforcement disagreed.)
 
-`_establishedAtLoad` is a `HashSet<string>` captured once per load (whichever path runs first — the
-first tick or the load-reminder coroutine — since both run after ownership is restored). The
-established/fresh choice is made once per location and never re-evaluated on later loads (because the
-resulting anchor is persisted).
+A baseline sentinel (`__lithium_rent_baseline_v2__`) is written once per save the first time the mod
+runs, recording that the established-vs-fresh decision has been made. Any owned location still lacking
+state afterwards is therefore a fresh purchase (gets the free first period), never a pre-existing one —
+which is what lets a freshly-bought property survive a reload/Alt+F4 without being billed on the spot.
+
+### DebugToggleLockout (F12 testing hotkey)
+
+`DebugToggleLockout()` (host-only) force-locks every enabled, owned rent location immediately — seeding a
+token debt if none is owed — and texts the contact, so the lockout enforcement (e.g. the motel's exterior
+door) and the messaging path can both be verified without waiting for the cadence. A second press clears
+the lockout and the test debt, restoring access. Wired to **F12** in `Core.OnUpdate`, gated by
+`HotkeyF12RentLockoutTest` in `Lithium.json` (default off).
 
 ### Apply() and startup flow
 
@@ -106,6 +112,14 @@ then to a rent location (GUID wins over name). Takes cash up to `Owed` from the 
 cash stays). On full payment: clears `Owed`, `DueSinceDay`, `WarningSent`, `LockedOut`, removes from
 `LockedCodes`, texts confirmation. On partial payment: deducts and texts remaining balance. Best-effort —
 never throws into the game's close path.
+
+After rent, `CreditFromDrop` also settles the **same property's outstanding power bill** from any cash
+left in the drop: it reads `ModElectricBill.GetOutstandingBill(code)` and, if positive, takes that much
+cash and calls `ModElectricBill.ApplyCashPayment(prop, amount)` (which reduces the bill and restores
+power if it clears). The phone Property tab shows rent and electricity together, so the rent dead drop
+covers both — without this, cash meant for the power bill would sit in the drop, ignored. No-op when the
+ElectricBill module is off or nothing is outstanding (the power bill normally auto-deducts from the bank;
+an outstanding amount only exists when the bank was short and power was cut).
 
 ### Auto-discovery (`DiscoverLocations`)
 
@@ -160,9 +174,9 @@ Per-save, per-location runtime state. Plain POCO serialized with Newtonsoft.Json
 ### Fields
 
 - `Owed` (float): outstanding rent currently owed.
-- `LastChargedDay` (int, default -1): `ElapsedDays` at which the most recent weekly charge was applied
-  (the cadence anchor). Next charge due at `LastChargedDay + RentIntervalDays`. -1 = not yet
-  initialised; anchored to the current day the first time the location is processed.
+- `LastChargedDay` (int, default -1): `ElapsedDays` at which the most recent charge was applied (the
+  cadence anchor). Next charge due at `LastChargedDay + RentIntervalDays`. -1 = not yet initialised;
+  anchored to the current day the first time the location is processed, so the first period is free.
 - `DueSinceDay` (int, default -1): `ElapsedDays` on which the current outstanding debt first became due,
   used to time the warning and lockout. -1 when nothing is owed.
 - `WarningSent` (bool): true once the pre-lockout final warning has been sent for the current overdue
