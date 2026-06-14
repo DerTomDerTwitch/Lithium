@@ -170,6 +170,7 @@ namespace Lithium
             Get<ModElectricBill>()?.DriveUpdate();
             Get<ModRent>()?.DriveUpdate();
             Get<ModProducts>()?.DriveUpdate();
+            Get<ModEmployees>()?.DriveUpdate();
         }
     }
 }

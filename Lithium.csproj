@@ -606,6 +606,7 @@
 		<Compile Include="Modules\EffectCombos\BonusPayments\EffectComboBonus.cs" />
 		<Compile Include="Modules\EffectCombos\ModEffectCombos.cs" />
 		<Compile Include="Modules\Employees\ModEmployees.cs" />
+		<Compile Include="Modules\Employees\EmployeeStuckWatchdog.cs" />
 		<Compile Include="Modules\Employees\Patches\CleanerPatch.cs" />
 		<Compile Include="Modules\Employees\Patches\StorageMenuRowPatch.cs" />
 		<Compile Include="Modules\Employees\Patches\NPCInventoryAwakePatch.cs" />

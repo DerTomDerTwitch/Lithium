@@ -67,11 +67,18 @@ namespace Lithium.Modules.Employees
         public CleanerConfiguration Cleaners = new CleanerConfiguration();
         public DealerConfiguration Dealers = new DealerConfiguration();
         public ChemistOrdersConfiguration ChemistOrders = new ChemistOrdersConfiguration();
+
+        // "Unstick stuck workers" watchdog. Its own Enabled (independent of the employee-tuning Enabled), on by default.
+        public EmployeeUnstickConfiguration Unstick = new EmployeeUnstickConfiguration();
     }
 
     public class ModEmployees : ModuleBase<ModEmployeesConfiguration>
     {
         public static readonly HashSet<Employee> ConfiguredEmployees = [];
+
+        // Frees workers who physically wedge while walking to a task (the "stuck until you talk to them" bug).
+        // Driven from Core.OnUpdate via DriveUpdate(); host-only, gated by Configuration.Unstick.Enabled.
+        private readonly EmployeeStuckWatchdog _stuckWatchdog = new EmployeeStuckWatchdog();
 
         public static bool TryBeginConfigure(Employee employee, out ModEmployeesConfiguration config)
         {
@@ -89,6 +96,15 @@ namespace Lithium.Modules.Employees
         {
             // Reset the production-order feature's per-save state (order store, history, orchestrator caches).
             ChemistOrderService.Reset();
+
+            // Drop stale stuck-worker tracking from the previous save/session.
+            _stuckWatchdog.Reset();
+        }
+
+        /// <summary>Per-frame driver (called from <c>Core.OnUpdate</c>); runs the stuck-worker watchdog.</summary>
+        public void DriveUpdate()
+        {
+            _stuckWatchdog.Tick(Configuration.Unstick);
         }
     }
 }
