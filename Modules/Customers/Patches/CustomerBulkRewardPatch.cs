@@ -42,7 +42,7 @@ namespace Lithium.Modules.Customers.Patches
 
         [HarmonyPrefix]
         public static void Prefix(Customer __instance, HandoverScreen.EHandoverOutcome outcome,
-            Contract contract, bool handoverByPlayer)
+            Contract contract, bool handoverByPlayer, bool giveBonuses)
         {
             _armed = false;
 
@@ -55,6 +55,15 @@ namespace Lithium.Modules.Customers.Patches
                 return;
 
             if (outcome != HandoverScreen.EHandoverOutcome.Finalize)
+                return;
+
+            // Skip out-of-schedule "walk-in" deals. When a customer approaches the player
+            // (RequestProductBehaviour) or the player offers a deal on the spot (InstantDealOffered),
+            // the game builds the contract from whatever the player puts in the handover screen and
+            // calls ProcessHandover(..., giveBonuses: false). These aren't the customer's scheduled
+            // bulk order, so the bulk-order reward multiplier must not apply — exactly like vanilla,
+            // which gates its own curfew/quality/quick-delivery bonuses behind this same flag.
+            if (!giveBonuses)
                 return;
 
             // No InstanceFinder.IsServer gate — ProcessHandover runs exactly once per handover on

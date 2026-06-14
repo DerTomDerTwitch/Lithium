@@ -95,17 +95,6 @@ namespace Lithium.Modules.Rent
         private bool _initialised;
         private float _nextDriveTime;
 
-        // TEMP throttled diagnostics (caps each unique key at a few prints) — surfaces WHY the rent tick may
-        // bail, without flooding the log. Uses Log.Warning so it shows even with Debug off.
-        private static readonly Dictionary<string, int> _diag = new();
-        private static void Diag(string key, string detail = null)
-        {
-            if (_diag.TryGetValue(key, out int c) && c >= 5)
-                return;
-            _diag[key] = c + 1;
-            Log.Warning($"[Rent][DIAG] {key}{(detail != null ? " " + detail : "")}");
-        }
-
         public override void Apply()
         {
             DiscoverLocations();
@@ -119,7 +108,6 @@ namespace Lithium.Modules.Rent
             _lastElapsedDay = -1;
             _initialised = false;
             _nextDriveTime = 0f;
-            _diag.Clear();
 
             MelonCoroutines.Start(LoadReminderRoutine());
         }
@@ -187,23 +175,16 @@ namespace Lithium.Modules.Rent
 
             TimeManager time = TimeManager.Instance;
             if (time == null)
-            {
-                Diag("time-null");
                 return;
-            }
 
             // Don't touch rent state until the save is fully loaded and the per-save baseline has been written.
             // EnsureBaseline decides — exactly once per save, persisted to disk — which properties pre-existed
             // (billed immediately) versus which are fresh purchases (grace). Until it succeeds, the owned-property
             // list may be incomplete and any decision we made would be wrong.
             if (!EnsureBaseline())
-            {
-                Diag("baseline-false", DescribeLoadState());
                 return;
-            }
 
             int today = time.ElapsedDays;
-            Diag("tick-run", $"today={today} init={_initialised}");
 
             if (!_initialised)
             {
@@ -243,14 +224,6 @@ namespace Lithium.Modules.Rent
         // fresh purchase (grace), never a pre-existing one. This is what makes a freshly-bought property survive
         // a reload/Alt+F4 without being billed on the spot. Gated on LoadManager reporting a fully loaded save so
         // the owned-property list is populated before we snapshot it. Returns true once the baseline exists.
-        private static string DescribeLoadState()
-        {
-            LoadManager lm = LoadManager.Instance;
-            if (lm == null)
-                return "lm=null";
-            return $"loaded={lm.IsGameLoaded} loading={lm.IsLoading} status={lm.LoadStatus} server={InstanceFinder.IsServer}";
-        }
-
         private bool EnsureBaseline()
         {
             if (_baselineReady)
@@ -523,29 +496,19 @@ namespace Lithium.Modules.Rent
         // notification is left to SendLoadReminders, so the returned transition message is discarded here.
         private void ReconcileLockoutsOnLoad(int today)
         {
-            int seen = 0;
             foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
             {
-                seen++;
                 string code = prop.PropertyCode;
                 if (string.IsNullOrEmpty(code) || !Store.TryGet(code, out RentLocationState state))
-                {
-                    Diag("reconcile-skip", $"{prop.PropertyName} code={code} (no state)");
                     continue;
-                }
                 if (state.LockedOut)
-                {
-                    Diag("reconcile-already-locked", prop.PropertyName);
                     continue;
-                }
 
                 ApplyDueCharges(state, loc, today);
                 ReconcileOverdue(prop, loc, code, state, today);
                 Store.Set(code, state);
                 PublishState(code, state);
-                Diag("reconcile-loc", $"{prop.PropertyName} owed={state.Owed} due={state.DueSinceDay} today={today} -> locked={state.LockedOut}");
             }
-            Diag("reconcile-done", $"ownedEnabled={seen}");
         }
 
         private void SendLoadReminders()
