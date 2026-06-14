@@ -136,6 +136,45 @@ namespace Lithium.Modules.ElectricBill
             return Store.TryGet(propertyCode, out ElectricBillState state) ? state.OutstandingBill : 0f;
         }
 
+        // Host-only: force this property's accrued electricity into its bill NOW — instead of waiting for the
+        // module's own weekly rollover — re-anchoring the cadence to today. Called by ModRent the moment rent
+        // is charged, so electricity falls due together with rent and is settled together at the dead drop.
+        // Idempotent per in-game day (if the regular rollover already billed/anchored today, this just reports
+        // the result), so the same minutes are never billed twice. Returns the property's resulting outstanding
+        // power bill (0 if the module is off, the property is the exempt RV, or not on the host).
+        public float BillNowWithRent(Property prop)
+        {
+            if (!Configuration.Enabled || prop == null || !InstanceFinder.IsServer)
+                return 0f;
+
+            string code = prop.PropertyCode;
+            if (string.IsNullOrEmpty(code) || prop.TryCast<RV>() != null)
+                return 0f;
+
+            try
+            {
+                ElectricBillState state = GetOrCreate(code);
+                int today = TimeManager.Instance != null ? TimeManager.Instance.ElapsedDays : state.LastBilledDay;
+
+                // The regular rollover runs earlier in the same frame; only bill if it hasn't already billed or
+                // anchored today, otherwise just read back the outstanding amount it produced.
+                if (state.LastBilledDay != today)
+                {
+                    BillOnce(prop, state);
+                    state.LastBilledDay = today;
+                    Store.Set(code, state);
+                    PublishElectric(code, state);
+                }
+
+                return state.OutstandingBill;
+            }
+            catch (Exception e)
+            {
+                Log.Warning($"[ElectricBill] Bill-with-rent failed: {e.Message}");
+                return 0f;
+            }
+        }
+
         // Outcome of a cash payment against a property's electricity bill, so the caller (the rent drop path)
         // can fold it into a combined landlord message instead of a separate notification.
         public sealed class CashPaymentResult

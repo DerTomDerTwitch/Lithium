@@ -422,9 +422,17 @@ namespace Lithium.Modules.Rent
 
                 if (charged)
                 {
-                    RentMessenger.Send(loc,
-                        $"Rent of ${loc.WeeklyRent:N0} for {prop.PropertyName} is due. Drop it at {loc.DeadDropName}. " +
-                        $"You have {Configuration.DaysUntilLockout} day(s) before I change the locks.");
+                    // Electricity is billed together with rent: close out this property's accrued power usage
+                    // into its bill now (re-anchoring the electric cadence to today), so both fall due the same
+                    // day and are paid together at the dead drop. powerOwed is the resulting outstanding bill.
+                    float powerOwed = Core.Get<ModElectricBill>()?.BillNowWithRent(prop) ?? 0f;
+
+                    string msg = $"Rent of ${loc.WeeklyRent:N0} for {prop.PropertyName} is due";
+                    if (powerOwed > 0.01f)
+                        msg += $", plus ${powerOwed:N0} electricity";
+                    msg += $". Drop it at {loc.DeadDropName}. " +
+                           $"You have {Configuration.DaysUntilLockout} day(s) before I change the locks.";
+                    RentMessenger.Send(loc, msg);
                     messaged = true;
                 }
 
@@ -492,14 +500,14 @@ namespace Lithium.Modules.Rent
                 state.LockedOut = true;
                 LockedCodes.Add(code);
                 return $"You're locked out of {prop.PropertyName}. Pay the ${state.Owed:N0} you owe at " +
-                       $"{loc.DeadDropName} to get back in.";
+                       $"{loc.DeadDropName} to get back in{ElectricClause(prop)}.";
             }
 
             if (Configuration.SendFinalWarning && !state.WarningSent
                 && Configuration.DaysUntilLockout >= 1 && overdue == Configuration.DaysUntilLockout - 1)
             {
                 state.WarningSent = true;
-                return $"Final warning: ${state.Owed:N0} rent still owed for {prop.PropertyName}. " +
+                return $"Final warning: ${state.Owed:N0} rent still owed for {prop.PropertyName}{ElectricClause(prop)}. " +
                        $"Pay at {loc.DeadDropName} by tomorrow or you're locked out.";
             }
 
@@ -587,10 +595,28 @@ namespace Lithium.Modules.Rent
 
         private static string StillLockedMessage(Property prop, RentLocationConfiguration loc, float owed) =>
             $"You're still locked out of {prop.PropertyName}. Pay the ${owed:N0} you owe at " +
-            $"{loc.DeadDropName} to get back in.";
+            $"{loc.DeadDropName} to get back in{ElectricClause(prop)}.";
 
         private static string ReminderMessage(Property prop, RentLocationConfiguration loc, float owed) =>
-            $"Reminder: ${owed:N0} rent still owed for {prop.PropertyName}. Drop it at {loc.DeadDropName}.";
+            $"Reminder: ${owed:N0} rent still owed for {prop.PropertyName}{ElectricClause(prop)}. Drop it at {loc.DeadDropName}.";
+
+        // Host-only read of a property's outstanding electricity bill (0 if the ElectricBill module is off or
+        // not on the host). Electricity is billed together with rent (ProcessDay's charge branch), so once a
+        // rent charge lands this reflects the same period's power bill — folded into the landlord's rent texts
+        // so both are shown, and paid, together at the dead drop.
+        private static float ElectricOutstanding(Property prop)
+        {
+            ModElectricBill electric = Core.Get<ModElectricBill>();
+            return electric != null && prop != null ? electric.GetOutstandingBill(prop.PropertyCode) : 0f;
+        }
+
+        // " (plus $X electricity)" clause appended to a landlord's rent text when the property also has an
+        // outstanding power bill, or "" when there's none.
+        private static string ElectricClause(Property prop)
+        {
+            float powerOwed = ElectricOutstanding(prop);
+            return powerOwed > 0.01f ? $" (plus ${powerOwed:N0} electricity)" : "";
+        }
 
         // Immediate-feedback path: when a player closes a dead-drop menu on the HOST, credit straight away.
         // Guarded to the server because rent state (the owed balance) only exists on the host, and taking the
