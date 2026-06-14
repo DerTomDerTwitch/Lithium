@@ -68,6 +68,15 @@ namespace Lithium.Modules.Employees.ProductionOrders
         private Text _chainLabel;
         private Text _statusLabel;
 
+        // progress view (shown when the chemist already has an active order, host only)
+        private bool _progressMode;
+        private object _progressLoop;
+        private Text _progStarted;
+        private Text _progRemaining;
+        private RectTransform _progBarFillRt;
+        private Text _progStatus;
+        private GameObject _stopButtonGo;
+
         public static void Request(Chemist chemist)
         {
             if (chemist == null)
@@ -89,7 +98,20 @@ namespace Lithium.Modules.Employees.ProductionOrders
 
             _chemist = chemist;
             _font = ResolveFont();
+            _progressMode = false;
             _products = ChemistOrderService.GetOrderableProductInfos();
+
+            // If this chemist already has a running order, show its progress with a Stop/Close instead of the
+            // creation form. Only the host owns the order store, so only the host can show progress; a client
+            // always gets the creation form (its Cancel button routes a stop request to the host).
+            ChemistOrderState existing = ChemOrderNet.IsHost ? ChemistOrderService.GetOrder(chemist) : null;
+            if (existing != null && existing.Active)
+            {
+                BuildProgress(existing);
+                LockInput();
+                return;
+            }
+
             _shelves = ChemistOrderService.GetNonEmptyShelves(chemist);
             _history = ChemistOrderService.GetHistory(chemist);
             _selected.Clear();
@@ -100,17 +122,7 @@ namespace Lithium.Modules.Employees.ProductionOrders
             _drugFilter = 0;
             _listedOnly = false;
 
-            ChemistOrderState existing = ChemistOrderService.GetOrder(chemist);
-            if (existing != null)
-            {
-                _selectedProductId = existing.TargetProductId;
-                _quantity = Math.Max(1, existing.Goal);
-                if (existing.ShelfGuids != null)
-                    foreach (string g in existing.ShelfGuids)
-                        _selected.Add(g);
-            }
-
-            Build();
+            BuildForm();
             LockInput();
             RebuildProducts();
             RebuildShelves();
@@ -121,7 +133,7 @@ namespace Lithium.Modules.Employees.ProductionOrders
         //  Layout
         // -------------------------------------------------------------------------------------------------
 
-        private void Build()
+        private void BuildForm()
         {
             _root = new GameObject(UiElementName);
             Canvas canvas = _root.AddComponent<Canvas>();
@@ -211,6 +223,185 @@ namespace Lithium.Modules.Employees.ProductionOrders
                 new Color(1f, 0.85f, 0.4f));
             Button(p, "Assign Order", new Vector2(660f, -690f), 150f, 30f, AssignOrder, new Color(0.20f, 0.45f, 0.25f));
             Button(p, "Cancel Order", new Vector2(818f, -690f), 142f, 30f, CancelOrder, new Color(0.45f, 0.25f, 0.22f));
+        }
+
+        // -------------------------------------------------------------------------------------------------
+        //  Progress view (active order)
+        // -------------------------------------------------------------------------------------------------
+
+        private void BuildProgress(ChemistOrderState order)
+        {
+            _progressMode = true;
+
+            _root = new GameObject(UiElementName);
+            Canvas canvas = _root.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 5000;
+            _root.AddComponent<GraphicRaycaster>();
+
+            GameObject dim = Child(_root.transform, "Dim");
+            RectTransform dimRt = dim.AddComponent<RectTransform>();
+            Fill(dimRt);
+            dim.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
+
+            GameObject panel = Child(_root.transform, "Panel");
+            RectTransform prt = panel.AddComponent<RectTransform>();
+            prt.anchorMin = prt.anchorMax = prt.pivot = new Vector2(0.5f, 0.5f);
+            prt.sizeDelta = new Vector2(640f, 440f);
+            prt.anchoredPosition = Vector2.zero;
+            panel.AddComponent<Image>().color = Bg;
+            Transform p = panel.transform;
+
+            Label(p, $"Production Order — {SafeName(_chemist)}", 22, new Vector2(20f, -14f), 470f, 32f,
+                TextAnchor.MiddleLeft, FontStyle.Bold, Header);
+            Button(p, "✕  Close", new Vector2(480f, -14f), 140f, 32f, () => Close(), new Color(0.45f, 0.25f, 0.22f));
+
+            // Product icon + name.
+            ChemistOrderService.ProductOption sel = FindProduct(order.TargetProductId);
+            Image icon = MakeIconImage(p, new Vector2(20f, -62f), 56f);
+            if (sel?.Icon != null) { icon.sprite = sel.Icon; icon.enabled = true; }
+            string pname = sel != null ? sel.Name
+                : (string.IsNullOrEmpty(order.TargetName) ? order.TargetProductId : order.TargetName);
+            Label(p, pname, 24, new Vector2(88f, -64f), 530f, 32f, TextAnchor.MiddleLeft, FontStyle.Bold, Color.white);
+
+            // Progress counts + bar.
+            _progStarted = Label(p, "", 18, new Vector2(88f, -100f), 300f, 24f, TextAnchor.MiddleLeft,
+                FontStyle.Normal, new Color(0.7f, 1f, 0.75f));
+            _progRemaining = Label(p, "", 16, new Vector2(360f, -100f), 258f, 24f, TextAnchor.MiddleRight,
+                FontStyle.Normal, Color.gray);
+
+            GameObject barBg = Child(p, "BarBg");
+            RectTransform barBgRt = barBg.AddComponent<RectTransform>();
+            TopLeft(barBgRt, new Vector2(20f, -136f), new Vector2(600f, 16f));
+            barBg.AddComponent<Image>().color = new Color(1f, 1f, 1f, 0.10f);
+            GameObject barFill = Child(barBg.transform, "Fill");
+            _progBarFillRt = barFill.AddComponent<RectTransform>();
+            _progBarFillRt.anchorMin = new Vector2(0f, 0f);
+            _progBarFillRt.anchorMax = new Vector2(0f, 1f);
+            _progBarFillRt.pivot = new Vector2(0f, 0.5f);
+            _progBarFillRt.offsetMin = Vector2.zero;
+            _progBarFillRt.offsetMax = Vector2.zero;
+            barFill.AddComponent<Image>().color = new Color(0.30f, 0.65f, 0.40f);
+
+            // Chain + shelves (read-only).
+            Label(p, BuildChainText(order), 14, new Vector2(20f, -166f), 600f, 24f, TextAnchor.UpperLeft,
+                FontStyle.Normal, new Color(0.8f, 0.85f, 0.9f));
+            Label(p, "Ingredient shelves:", 14, new Vector2(20f, -206f), 600f, 20f, TextAnchor.MiddleLeft,
+                FontStyle.Bold, Color.gray);
+            Label(p, BuildShelvesText(order), 14, new Vector2(20f, -228f), 600f, 72f, TextAnchor.UpperLeft,
+                FontStyle.Normal, new Color(0.75f, 0.8f, 0.85f));
+
+            _progStatus = Label(p, "Stopping returns all carried items and station contents to the output, " +
+                "and frees the reserved shelf slots.", 13, new Vector2(20f, -312f), 600f, 40f, TextAnchor.UpperLeft,
+                FontStyle.Italic, new Color(0.7f, 0.72f, 0.78f));
+
+            // Actions.
+            _stopButtonGo = Button(p, "Stop Order & Return Items", new Vector2(20f, -398f), 320f, 32f, StopOrder,
+                new Color(0.5f, 0.28f, 0.24f)).gameObject;
+            Button(p, "Close", new Vector2(490f, -398f), 130f, 32f, () => Close(), Btn);
+
+            UpdateProgressView(order);
+            _progressLoop = MelonCoroutines.Start(ProgressRoutine());
+        }
+
+        private void UpdateProgressView(ChemistOrderState order)
+        {
+            if (order == null)
+                return;
+            int goal = Math.Max(1, order.Goal);
+            int started = Math.Max(0, Math.Min(order.Started, order.Goal));
+            int remaining = Math.Max(0, order.Goal - order.Started);
+
+            if (_progStarted != null)
+                _progStarted.text = $"Produced {started} / {order.Goal}";
+            if (_progRemaining != null)
+                _progRemaining.text = remaining > 0 ? $"{remaining} to go" : "complete";
+            if (_progBarFillRt != null)
+                _progBarFillRt.anchorMax = new Vector2(Mathf.Clamp01((float)order.Started / goal), 1f);
+        }
+
+        private IEnumerator ProgressRoutine()
+        {
+            while (_root != null && _progressMode)
+            {
+                yield return new WaitForSeconds(0.5f);
+                if (_root == null || !_progressMode)
+                    yield break;
+
+                ChemistOrderState order = ChemistOrderService.GetOrder(_chemist);
+                if (order == null || !order.Active)
+                {
+                    OnOrderFinished();
+                    yield break;
+                }
+                UpdateProgressView(order);
+            }
+        }
+
+        private void OnOrderFinished()
+        {
+            if (_progBarFillRt != null)
+                _progBarFillRt.anchorMax = new Vector2(1f, 1f);
+            if (_progStarted != null)
+                _progStarted.text = "Order complete";
+            if (_progRemaining != null)
+                _progRemaining.text = "done";
+            if (_progStatus != null)
+            {
+                _progStatus.text = "The chemist has finished this order.";
+                _progStatus.color = new Color(0.6f, 1f, 0.65f);
+            }
+            if (_stopButtonGo != null)
+                _stopButtonGo.SetActive(false);
+        }
+
+        private void StopOrder()
+        {
+            if (_chemist == null)
+            {
+                Close();
+                return;
+            }
+            if (!ChemOrderNet.IsHost)
+            {
+                ChemOrderNet.SendCancel(_chemist);
+                Close();
+                return;
+            }
+            ChemistOrderService.StopOrder(_chemist);
+            Close();
+        }
+
+        private string BuildChainText(ChemistOrderState order)
+        {
+            if (order?.Chain == null || order.Chain.Count == 0)
+                return "";
+            System.Text.StringBuilder path = new();
+            path.Append(ItemName(order.Chain[0].InputId));
+            foreach (OrderStep step in order.Chain)
+                path.Append(" +").Append(ItemName(step.MixerId));
+            path.Append(" → ").Append(ItemName(order.Chain[order.Chain.Count - 1].OutputId));
+            return $"{order.Chain.Count}-step mix:  {path}";
+        }
+
+        private string BuildShelvesText(ChemistOrderState order)
+        {
+            if (order?.ShelfGuids == null || order.ShelfGuids.Count == 0)
+                return "—";
+            List<string> names = new();
+            foreach (string g in order.ShelfGuids)
+            {
+                var shelf = ChemistOrderService.ResolveShelf(g);
+                string nm = "Shelf";
+                try
+                {
+                    if (shelf != null && shelf.StorageEntity != null && !string.IsNullOrEmpty(shelf.StorageEntity.StorageEntityName))
+                        nm = shelf.StorageEntity.StorageEntityName;
+                }
+                catch { /* default */ }
+                names.Add(nm);
+            }
+            return string.Join(", ", names);
         }
 
         // -------------------------------------------------------------------------------------------------
@@ -397,14 +588,13 @@ namespace Lithium.Modules.Employees.ProductionOrders
                     return;
                 }
                 ChemOrderNet.SendSet(_chemist, _selectedProductId, _quantity, shelves);
-                SetStatus($"Order request sent to the host: {_quantity}x {ItemName(_selectedProductId)}.", false);
+                Close(); // request sent to the host — close the UI
                 return;
             }
 
             if (ChemistOrderService.TrySetOrder(_chemist, _selectedProductId, _quantity, shelves, out string error))
             {
-                SetStatus($"Order assigned: {_quantity}x {ItemName(_selectedProductId)}. Shelf slots reserved.", false);
-                _history = ChemistOrderService.GetHistory(_chemist);
+                Close(); // order assigned — close the UI (re-open the chemist to see progress / stop it)
             }
             else
             {
@@ -702,6 +892,16 @@ namespace Lithium.Modules.Employees.ProductionOrders
 
         private void Teardown()
         {
+            if (_progressLoop != null)
+            {
+                try { MelonCoroutines.Stop(_progressLoop); } catch { /* already stopped */ }
+                _progressLoop = null;
+            }
+            _progressMode = false;
+            _progStarted = _progRemaining = _progStatus = null;
+            _progBarFillRt = null;
+            _stopButtonGo = null;
+
             _productRowBg.Clear();
             _shelfRowBg.Clear();
             _drugButtons.Clear();

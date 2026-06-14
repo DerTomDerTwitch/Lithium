@@ -61,7 +61,9 @@ namespace Lithium.Modules.PhoneApp
             {
                 if (!_built || TimeManager.Instance == null)
                     return false;
-                return TimeManager.Instance.CurrentDay != _builtDay;
+                // Play-day (4 AM rollover), not the raw midnight-incremented day — so the list stays put
+                // through the post-midnight hours and refreshes only once a new day is really reached.
+                return GameDay.CurrentDay != _builtDay;
             }
         }
 
@@ -117,7 +119,9 @@ namespace Lithium.Modules.PhoneApp
 
             try
             {
-                EDay today = TimeManager.Instance != null ? TimeManager.Instance.CurrentDay : default;
+                // The play-day: the game rolls CurrentDay at midnight, but the player only reaches a new day
+                // after the 4 AM end-of-day freeze, so before then "today" is still the previous day.
+                EDay today = GameDay.CurrentDay;
                 _builtDay = today;
                 _built = true;
 

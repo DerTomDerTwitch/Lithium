@@ -115,11 +115,20 @@ namespace Lithium.Modules.ElectricBill
         private int _minutesSincePersist;
         private bool _initialised;
 
+        // Metering baseline for the frame-based driver (DriveUpdate). _lastMinSum is the in-game minute
+        // counter (TimeManager.GetTotalMinSum) at the previous poll; the delta since then is the number of
+        // in-game minutes to bill. _eodRealAccum accumulates real time during the frozen 4 AM stall (when
+        // the minute counter doesn't advance). _pendingSkipResync defers a baseline resync to the next poll
+        // after a time-skip the TimeSkipBillingPatch already billed, so those minutes aren't billed twice.
+        private int _lastMinSum = -1;
+        private float _eodRealAccum;
+        private bool _pendingSkipResync;
+
         public static bool IsPowerCut(string propertyCode) =>
             !string.IsNullOrEmpty(propertyCode) && PowerCutCodes.Contains(propertyCode);
 
-        // Host-only read of a property's outstanding (unpaid) power bill — what the bank auto-deduct couldn't
-        // cover. Used by the Rent dead-drop payment path so cash dropped there can also clear the power bill.
+        // Host-only read of a property's outstanding (unpaid) power bill — the cash debt billed each interval.
+        // Used by the Rent dead-drop payment path so cash dropped there settles the power bill with the rent.
         public float GetOutstandingBill(string propertyCode)
         {
             if (!Configuration.Enabled || string.IsNullOrEmpty(propertyCode) || !InstanceFinder.IsServer)
@@ -127,34 +136,53 @@ namespace Lithium.Modules.ElectricBill
             return Store.TryGet(propertyCode, out ElectricBillState state) ? state.OutstandingBill : 0f;
         }
 
-        // Host-only: register a cash payment (collected at the rent dead drop) against this property's
-        // outstanding power bill, restoring power if it clears. The normal billing path deducts from the bank;
-        // this lets the player settle the bill in cash when the bank can't cover it. The caller has already
-        // taken the cash from the drop, so this only adjusts the bill and power state.
-        public void ApplyCashPayment(Property prop, float amount)
+        // Outcome of a cash payment against a property's electricity bill, so the caller (the rent drop path)
+        // can fold it into a combined landlord message instead of a separate notification.
+        public sealed class CashPaymentResult
         {
+            public float Paid;          // cash actually applied to the bill
+            public float Remaining;     // bill still outstanding afterwards
+            public bool Cleared;        // bill fully settled by this payment
+            public bool PowerRestored;  // power came back on as a result
+        }
+
+        // Host-only: register a cash payment (collected at the rent dead drop) against this property's
+        // outstanding power bill, restoring power if it clears. Electricity is billed as a cash debt payable
+        // here (no bank auto-deduct), so this is the sole settlement path. Pass announce:false to suppress the
+        // power-bill notification when the caller reports the result itself (e.g. the combined rent message).
+        public CashPaymentResult ApplyCashPayment(Property prop, float amount, bool announce = true)
+        {
+            CashPaymentResult result = new();
             if (!Configuration.Enabled || prop == null || amount <= 0f || !InstanceFinder.IsServer)
-                return;
+                return result;
 
             string code = prop.PropertyCode;
             if (string.IsNullOrEmpty(code) || !Store.TryGet(code, out ElectricBillState state) || state.OutstandingBill <= 0f)
-                return;
+                return result;
 
+            result.Paid = Math.Min(state.OutstandingBill, amount);
             state.OutstandingBill = Math.Max(0f, state.OutstandingBill - amount);
             if (state.OutstandingBill < 0.01f)
             {
                 state.OutstandingBill = 0f;
+                result.Cleared = true;
                 if (state.PoweredOff)
+                {
                     RestorePower(prop, state);
-                ElectricBillNotifier.Send("Power bill paid", $"{prop.PropertyName}: ${amount:N2} settled in cash");
+                    result.PowerRestored = true;
+                }
+                if (announce)
+                    ElectricBillNotifier.Send("Power bill paid", $"{prop.PropertyName}: ${result.Paid:N2} settled in cash");
             }
-            else
+            else if (announce)
             {
-                ElectricBillNotifier.Send("Power bill — partial", $"{prop.PropertyName}: ${amount:N2} paid, ${state.OutstandingBill:N2} left");
+                ElectricBillNotifier.Send("Power bill — partial", $"{prop.PropertyName}: ${result.Paid:N2} paid, ${state.OutstandingBill:N2} left");
             }
+            result.Remaining = state.OutstandingBill;
 
             Store.Set(code, state);
             PublishElectric(code, state);
+            return result;
         }
 
         // One grouped appliance line for the phone app's electric table.
@@ -295,13 +323,24 @@ namespace Lithium.Modules.ElectricBill
             _ownedByCode.Clear();
             _lastElapsedDay = -1;
             _minutesSincePersist = 0;
+            _lastMinSum = -1;
+            _eodRealAccum = 0f;
+            _pendingSkipResync = false;
             _initialised = false;
         }
 
-        // Called every in-game minute from ElectricBillTickPatch.
-        public void Tick()
+        // Frame-based driver, forwarded from Core.OnUpdate (host-only). Replaces the former postfix on
+        // TimeManager.PassMinute: PassMinute() is a one-line private forwarder (it just calls
+        // PassMinute_Client(CurrentTime)) that the IL2CPP build can inline into TimeLoop, so a Harmony
+        // postfix on it is not reliably invoked — the same fragility that moved the Rent module onto
+        // OnUpdate. When the postfix didn't fire, metering never ran and the bill stayed $0. Metering is now
+        // derived from the in-game minute counter (GetTotalMinSum): the delta since the last poll is the
+        // number of in-game minutes to bill. This advances exactly with game time, naturally pauses when the
+        // clock is paused (the counter stops), and never depends on PassMinute. Host-only: state is
+        // authoritative on the server and replicated to clients via HostStateSync.
+        public void DriveUpdate()
         {
-            if (!Configuration.Enabled)
+            if (!Configuration.Enabled || !InstanceFinder.IsServer)
                 return;
 
             TimeManager time = TimeManager.Instance;
@@ -316,17 +355,43 @@ namespace Lithium.Modules.ElectricBill
                 RebuildCutFromState();
                 PublishElectricAll();
                 _lastElapsedDay = today;
+                _lastMinSum = time.GetTotalMinSum();
+                _eodRealAccum = 0f;
+                _pendingSkipResync = false;
                 _initialised = true;
                 return;
             }
 
-            // PassMinute keeps firing while the clock is frozen at 4 AM (the end-of-day AFK window)
-            // without advancing the time. If EndOfDayFreeze is on, production is frozen too, so don't
-            // bill there. If it's off, machines keep producing (the AFK exploit) so we still meter — you
-            // pay for what you're running.
-            bool endOfDayFrozen = time.IsEndOfDay && EndOfDayFreezeActive();
-            if (!endOfDayFrozen)
-                AccrueMinute();
+            int minSum = time.GetTotalMinSum();
+
+            if (_pendingSkipResync)
+            {
+                // A sleep / story time-skip was just metered by TimeSkipBillingPatch (the same count the game
+                // advances cooks by). The minute counter jumped across the skip; resync the baseline without
+                // accruing so those minutes aren't billed a second time here.
+                _pendingSkipResync = false;
+                _lastMinSum = minSum;
+                _eodRealAccum = 0f;
+            }
+            else if (time.IsEndOfDay)
+            {
+                // 4 AM end-of-day stall: the clock is frozen here (ShouldMinutePass is false), so the minute
+                // counter doesn't advance. With EndOfDayFreeze on, production is frozen too — bill nothing.
+                // With it off, machines keep producing (the AFK exploit), so meter against real time at the
+                // game's minute cadence so you still pay for what runs.
+                if (!EndOfDayFreezeActive() && Time.timeScale > 0f)
+                    AccrueEndOfDayRealtime(time);
+                _lastMinSum = minSum;
+            }
+            else
+            {
+                _eodRealAccum = 0f;
+                int delta = minSum - _lastMinSum;
+                if (delta > 0)
+                    AccrueMinutes(delta);
+                // delta <= 0 (paused, no change, or a discontinuity) accrues nothing; just resync.
+                _lastMinSum = minSum;
+            }
 
             if (today != _lastElapsedDay)
             {
@@ -338,10 +403,38 @@ namespace Lithium.Modules.ElectricBill
             }
         }
 
+        // Meters the frozen 4 AM stall against real time (only reached when EndOfDayFreeze is off). The
+        // minute counter doesn't move here, so convert elapsed real seconds to whole in-game minutes at the
+        // current cadence (MinuteDuration real-seconds per in-game minute, scaled by the time multiplier and
+        // timeScale), carrying the remainder so the rate stays accurate over the stall.
+        private void AccrueEndOfDayRealtime(TimeManager time)
+        {
+            float minuteDuration = TimeManager.MinuteDuration;
+            float scale = time.TimeSpeedMultiplier * Time.timeScale;
+            if (minuteDuration <= 0f || scale <= 0f)
+                return;
+
+            float realSecondsPerMinute = minuteDuration / scale;
+            _eodRealAccum += Time.unscaledDeltaTime;
+
+            int mins = (int)(_eodRealAccum / realSecondsPerMinute);
+            if (mins > 0)
+            {
+                _eodRealAccum -= mins * realSecondsPerMinute;
+                AccrueMinutes(mins);
+            }
+        }
+
         // --- Per-minute metering ---------------------------------------------------------------------
 
-        private void AccrueMinute()
+        // Accrues `mins` in-game minutes of energy across every owned property — the delta the frame-based
+        // driver detected since the last poll (or the count metered during the 4 AM stall). A powered-off
+        // property accrues nothing and instead re-forces any re-toggled lights off.
+        private void AccrueMinutes(int mins)
         {
+            if (mins <= 0)
+                return;
+
             foreach (string code in _ownedByCode.Keys)
             {
                 ElectricBillState state = GetOrCreate(code);
@@ -353,10 +446,11 @@ namespace Lithium.Modules.ElectricBill
                     continue;
                 }
 
-                AccrueProperty(code, state, 1f);
+                AccrueProperty(code, state, mins);
             }
 
-            if (++_minutesSincePersist >= 60)
+            _minutesSincePersist += mins;
+            if (_minutesSincePersist >= 60)
             {
                 PersistAll();
                 _minutesSincePersist = 0;
@@ -434,6 +528,11 @@ namespace Lithium.Modules.ElectricBill
             if (!Configuration.Enabled || minutes <= 0 || !_initialised)
                 return;
 
+            // The minute counter the frame-based driver tracks (GetTotalMinSum) will jump across this skip.
+            // Flag a baseline resync so DriveUpdate's next poll absorbs that jump without billing the skipped
+            // minutes a second time — they're billed right here, matching the count the game advances cooks by.
+            _pendingSkipResync = true;
+
             try
             {
                 foreach (string code in _ownedByCode.Keys)
@@ -495,12 +594,6 @@ namespace Lithium.Modules.ElectricBill
                     state.LastBilledDay += intervals * Configuration.BillingIntervalDays;
                     BillOnce(prop, state);
                 }
-                else if (state.PoweredOff && state.OutstandingBill > 0f)
-                {
-                    // No bill due today, but retry the auto-deduct so power can come back as soon as the
-                    // player has the funds.
-                    TryAutoPay(prop, state);
-                }
 
                 Store.Set(code, state);
                 PublishElectric(code, state);
@@ -528,6 +621,10 @@ namespace Lithium.Modules.ElectricBill
                     PublishElectric(code, state);
         }
 
+        // Issues the period's electricity as a cash debt payable at the property's rent dead drop — there is
+        // NO bank auto-deduct; the player settles rent and electricity together there (ModRent.CreditFromDrop).
+        // One interval of grace: power is only cut if a PREVIOUS bill was still unpaid when this one lands, so
+        // a player who keeps the drop funded (the rent sweep clears OutstandingBill each tick) is never cut.
         private void BillOnce(Property prop, ElectricBillState state)
         {
             float kwh = state.AccruedWattMinutes / 60f / 1000f;
@@ -535,57 +632,26 @@ namespace Lithium.Modules.ElectricBill
             state.AccruedWattMinutes = 0f;
             state.AccruedByAppliance.Clear();
 
-            float due = amount + state.OutstandingBill;
-            if (due < 0.01f)
+            bool hadUnpaid = state.OutstandingBill > 0.01f;
+            state.OutstandingBill += amount;
+
+            if (state.OutstandingBill < 0.01f)
             {
                 state.OutstandingBill = 0f;
                 return;
             }
 
-            if (TryDeduct(due, prop))
+            if (hadUnpaid && !state.PoweredOff)
             {
-                state.OutstandingBill = 0f;
-                if (state.PoweredOff)
-                    RestorePower(prop, state);
-                ElectricBillNotifier.Send("Power bill paid", $"{prop.PropertyName}: ${due:N2}");
+                // A full billing interval passed with the bill unpaid — cut power until it's settled in cash.
+                CutPower(prop, state);
+                ElectricBillNotifier.Send("Power cut off",
+                    $"{prop.PropertyName}: ${state.OutstandingBill:N2} unpaid. Settle it in cash at the dead drop.");
             }
             else
             {
-                state.OutstandingBill = due;
-                if (!state.PoweredOff)
-                    CutPower(prop, state);
-                ElectricBillNotifier.Send("Power cut off", $"{prop.PropertyName}: ${due:N2} unpaid");
-            }
-        }
-
-        private void TryAutoPay(Property prop, ElectricBillState state)
-        {
-            if (state.OutstandingBill <= 0f)
-                return;
-
-            if (TryDeduct(state.OutstandingBill, prop))
-            {
-                ElectricBillNotifier.Send("Power restored", $"{prop.PropertyName}: ${state.OutstandingBill:N2} paid");
-                state.OutstandingBill = 0f;
-                RestorePower(prop, state);
-            }
-        }
-
-        private static bool TryDeduct(float amount, Property prop)
-        {
-            try
-            {
-                MoneyManager money = NetworkSingleton<MoneyManager>.Instance;
-                if (money == null || money.onlineBalance < amount)
-                    return false;
-
-                money.CreateOnlineTransaction("Electricity", -amount, 1f, $"Power bill — {prop.PropertyName}");
-                return true;
-            }
-            catch (Exception e)
-            {
-                Log.Warning($"[ElectricBill] Deduction failed: {e.Message}");
-                return false;
+                ElectricBillNotifier.Send("Power bill due",
+                    $"{prop.PropertyName}: ${state.OutstandingBill:N2}. Pay it in cash at the dead drop with your rent.");
             }
         }
 

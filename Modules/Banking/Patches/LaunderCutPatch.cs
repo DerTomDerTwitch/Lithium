@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using HarmonyLib;
+using Il2CppFishNet;
 using Il2CppScheduleOne.DevUtilities;
 using Il2CppScheduleOne.Money;
 using Il2CppScheduleOne.Property;
@@ -54,6 +55,15 @@ namespace Lithium.Modules.Banking.Patches
 
         public static void Snapshot(Business business, int mins)
         {
+            // Server-only, mirroring vanilla Business.CompleteOperation which gates the laundering
+            // payout on InstanceFinder.IsServer (Business.cs:189). Business.MinPass/TimeSkipped run
+            // on EVERY peer (subscribed to onMinutePass/onTimeSkip in Start), so without this gate
+            // each connected client would also charge the cut via CreateOnlineTransaction (a
+            // RunLocally ServerRpc), deducting it 1 + clientCount times from the shared online
+            // balance. The cut, like the payout, must be charged once on the host.
+            if (!InstanceFinder.IsServer)
+                return;
+
             ModBankingConfiguration config = Core.Get<ModBanking>().Configuration;
             if (!config.Enabled || business == null)
                 return;
@@ -83,6 +93,11 @@ namespace Lithium.Modules.Banking.Patches
         public static void Settle(Business business)
         {
             if (business == null)
+                return;
+
+            // Host-only (see Snapshot). Clients never populate Pending, but guard here too so the
+            // cut transaction + report bookkeeping only ever run on the server.
+            if (!InstanceFinder.IsServer)
                 return;
 
             IntPtr key = business.Pointer;

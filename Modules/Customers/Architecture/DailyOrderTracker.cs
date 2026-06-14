@@ -1,4 +1,4 @@
-using Il2CppScheduleOne.GameTime;
+using Lithium.Helper;
 
 namespace Lithium.Modules.Customers.Architecture
 {
@@ -11,16 +11,18 @@ namespace Lithium.Modules.Customers.Architecture
     /// pattern days;</item>
     /// <item>which customers have completed (handed over) their order today, so the tab can mark them done.</item>
     /// </list>
-    /// Days are stored as absolute <see cref="TimeManager.ElapsedDays"/>, so a stale entry from a previous
-    /// day simply fails the "== today" test — no explicit cleanup needed. Written only on the host (both the
-    /// catch-up and the handover run server-side); a client tab degrades to live order-day info only.
+    /// Days are stored as the absolute play-day index (<see cref="GameDay.CurrentIndex"/> — the 4 AM-adjusted
+    /// <c>ElapsedDays</c>, so the day rolls over at the end-of-day freeze the player experiences, not at
+    /// midnight mid-session), so a stale entry from a previous day simply fails the "== today" test — no
+    /// explicit cleanup needed. Written only on the host (both the catch-up and the handover run
+    /// server-side); a client tab degrades to live order-day info only.
     /// </summary>
     public static class DailyOrderTracker
     {
         private static readonly SaveSlotStore<int> CompletedDay = new("DailyOrderCompleted", "daily order completions");
         private static readonly SaveSlotStore<int> CaughtUpDay = new("DailyOrderCatchups", "daily order catch-ups");
 
-        private static int Today => TimeManager.Instance != null ? TimeManager.Instance.ElapsedDays : int.MinValue;
+        private static int Today => GameDay.CurrentIndex;
 
         public static void RecordCompletion(string customerName)
         {

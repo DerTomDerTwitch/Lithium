@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using Il2CppFishNet;
+using Il2CppScheduleOne;
 using Il2CppScheduleOne.Employees;
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.Management;
+using Il2CppScheduleOne.NPCs;
 using Il2CppScheduleOne.NPCs.Behaviour;
 using Il2CppScheduleOne.ObjectScripts;
 using Il2CppScheduleOne.Storage;
@@ -38,6 +40,180 @@ namespace Lithium.Modules.Employees.ProductionOrders
             _routes.Clear();
             _countedFinal.Clear();
             _seeded.Clear();
+        }
+
+        // -------------------------------------------------------------------------------------------------
+        //  Stop / drain (host-only)
+        // -------------------------------------------------------------------------------------------------
+
+        // Cleanly winds down an order the player stopped: disables any in-flight order behaviour, then deposits
+        // the chemist's carried order items and every assigned station's loaded slots (output, then product, then
+        // mixer) into the "designated output" — each station's configured destination route if set, otherwise an
+        // assigned shelf. Items with nowhere to go are left in place rather than destroyed; a station that is
+        // mid-cook is left to finish (its operation can't be cleanly extracted). The caller releases the reserved
+        // shelf-slot locks BEFORE this runs so those slots can receive the drained ingredients.
+        public void Drain(Chemist chemist, ChemistOrderState order, List<ITransitEntity> shelves)
+        {
+            if (chemist == null || order == null || !InstanceFinder.IsServer)
+                return;
+            try
+            {
+                DisableOrderBehaviours(chemist);
+
+                var stations = chemist.configuration?.MixStations;
+
+                // Prioritized deposit targets: each station's configured destination first, then the shelves.
+                List<ITransitEntity> outputs = new();
+                if (stations != null)
+                {
+                    for (int i = 0; i < stations.Count; i++)
+                    {
+                        ITransitEntity dest = StationDestination(stations[i]);
+                        if (dest != null && !outputs.Contains(dest))
+                            outputs.Add(dest);
+                    }
+                }
+                if (shelves != null)
+                    foreach (ITransitEntity sh in shelves)
+                        if (sh != null && !outputs.Contains(sh))
+                            outputs.Add(sh);
+
+                // Empty each station's loaded slots into the outputs.
+                if (stations != null)
+                {
+                    for (int i = 0; i < stations.Count; i++)
+                    {
+                        MixingStation station = stations[i];
+                        if (station == null)
+                            continue;
+                        DepositSlot(chemist, station.OutputSlot, outputs);
+                        DepositSlot(chemist, station.ProductSlot, outputs);
+                        DepositSlot(chemist, station.MixerSlot, outputs);
+                    }
+                }
+
+                // Empty the order items the chemist is carrying.
+                DrainInventory(chemist, order, outputs);
+            }
+            catch (Exception e)
+            {
+                Log.Warning($"[ChemistOrders] Drain failed for {SafeName(chemist)}: {e.Message}");
+            }
+        }
+
+        private static void DisableOrderBehaviours(Chemist chemist)
+        {
+            try
+            {
+                MoveItemBehaviour move = chemist.MoveItemBehaviour;
+                if (move != null && (move.Active || move.Enabled))
+                    move.Disable_Networked(null);
+            }
+            catch (Exception e) { Log.Warning($"[ChemistOrders] Disabling move behaviour failed: {e.Message}"); }
+            try
+            {
+                StartMixingStationBehaviour mix = chemist.StartMixingStationBehaviour;
+                if (mix != null && (mix.Active || mix.Enabled))
+                    mix.Disable_Networked(null);
+            }
+            catch (Exception e) { Log.Warning($"[ChemistOrders] Disabling mix behaviour failed: {e.Message}"); }
+        }
+
+        private static ITransitEntity StationDestination(MixingStation station)
+        {
+            if (station == null)
+                return null;
+            try
+            {
+                MixingStationConfiguration cfg = station.Configuration?.TryCast<MixingStationConfiguration>();
+                TransitRoute route = cfg != null ? cfg.DestinationRoute : null;
+                if (route != null && route.AreEntitiesNonNull())
+                    return route.Destination;
+            }
+            catch { /* no usable destination */ }
+            return null;
+        }
+
+        private static void DrainInventory(Chemist chemist, ChemistOrderState order, List<ITransitEntity> outputs)
+        {
+            NPCInventory inv;
+            try { inv = chemist.Inventory; }
+            catch { return; }
+            if (inv == null || inv.ItemSlots == null)
+                return;
+
+            HashSet<string> chainIds = ChainItemIds(order);
+            var slots = inv.ItemSlots;
+            for (int i = 0; i < slots.Count; i++)
+            {
+                ItemSlot slot = slots[i];
+                if (slot == null || slot.ItemInstance == null || slot.Quantity <= 0)
+                    continue;
+                // Only return items this order put in the chemist's hands; never touch unrelated carried items.
+                string id = DefId(slot.ItemInstance);
+                if (id == null || !chainIds.Contains(id))
+                    continue;
+                DepositSlot(chemist, slot, outputs);
+            }
+        }
+
+        private static HashSet<string> ChainItemIds(ChemistOrderState order)
+        {
+            HashSet<string> ids = new();
+            if (order == null || order.Chain == null)
+                return ids;
+            if (!string.IsNullOrEmpty(order.TargetProductId))
+                ids.Add(order.TargetProductId);
+            for (int i = 0; i < order.Chain.Count; i++)
+            {
+                OrderStep s = order.Chain[i];
+                if (!string.IsNullOrEmpty(s.InputId)) ids.Add(s.InputId);
+                if (!string.IsNullOrEmpty(s.MixerId)) ids.Add(s.MixerId);
+                if (!string.IsNullOrEmpty(s.OutputId)) ids.Add(s.OutputId);
+            }
+            return ids;
+        }
+
+        // Moves a slot's contents into the first deposit target(s) with capacity, leaving any remainder in place.
+        // Capacity is probed with asker=null (only unlocked, truly-free slots count), so the subsequent insert —
+        // which skips locked slots — places exactly the amount we then deduct from the source.
+        private static void DepositSlot(Chemist chemist, ItemSlot slot, List<ITransitEntity> outputs)
+        {
+            if (slot == null || outputs == null || outputs.Count == 0)
+                return;
+
+            int guard = 0;
+            while (slot.ItemInstance != null && slot.Quantity > 0 && guard++ < 128)
+            {
+                int before = slot.Quantity;
+                ItemInstance inst = slot.ItemInstance;
+
+                foreach (ITransitEntity dest in outputs)
+                {
+                    if (dest == null)
+                        continue;
+                    int remaining = slot.Quantity;
+                    if (remaining <= 0)
+                        break;
+
+                    int cap;
+                    try { cap = dest.GetInputCapacityForItem(inst.GetCopy(remaining), null); }
+                    catch { cap = 0; }
+                    int put = Math.Min(remaining, cap);
+                    if (put <= 0)
+                        continue;
+
+                    try
+                    {
+                        dest.InsertItemIntoInput(inst.GetCopy(put), chemist);
+                        slot.ChangeQuantity(-put);
+                    }
+                    catch (Exception e) { Log.Warning($"[ChemistOrders] Deposit failed: {e.Message}"); }
+                }
+
+                if (slot.Quantity >= before) // nothing accepted this pass — no point looping further
+                    break;
+            }
         }
 
         // Returns true when this chemist has an active order and we took over its decision tick (the caller
@@ -347,8 +523,10 @@ namespace Lithium.Modules.Employees.ProductionOrders
                 }
             }
 
-            // Nothing actionable: out of ingredients, or every station is busy mixing. Surface a reason.
-            chemist.SubmitNoWorkReason(MissingReason(order), "Stock the assigned shelves with the ingredients.");
+            // Nothing actionable: out of ingredients, or every station is busy mixing. Surface a reason naming
+            // exactly which chain ingredient is short, so the player knows what to stock (and we can tell a real
+            // detection bug from an empty shelf).
+            chemist.SubmitNoWorkReason(MissingReason(order, shelves), "Stock the assigned shelves with the ingredients.");
         }
 
         // Units of this station's batch that will still become NEW target output (not yet committed to a final
@@ -621,13 +799,52 @@ namespace Lithium.Modules.Employees.ProductionOrders
             return -1;
         }
 
-        private string MissingReason(ChemistOrderState order)
+        // Names the specific chain ingredient(s) the assigned shelves can't supply a single full unit of (base +
+        // each mixer, counting a mixer used in N stages as needing N per unit). If nothing is actually short, the
+        // chemist is just round-robining busy stations, so fall back to the generic wording.
+        private string MissingReason(ChemistOrderState order, List<ITransitEntity> shelves)
         {
+            Dictionary<string, int> required = new();
+            void Add(string id)
+            {
+                if (string.IsNullOrEmpty(id))
+                    return;
+                required[id] = required.TryGetValue(id, out int c) ? c + 1 : 1;
+            }
+            Add(order.Chain[0].InputId);
+            for (int i = 0; i < order.Chain.Count; i++)
+                Add(order.Chain[i].MixerId);
+
+            Dictionary<string, int> stock = ShelfCounts(shelves);
+            List<string> missing = new();
+            foreach (KeyValuePair<string, int> need in required)
+            {
+                int have = stock.TryGetValue(need.Key, out int a) ? a : 0;
+                if (have < need.Value)
+                    missing.Add(have <= 0
+                        ? $"{ItemName(need.Key)} (none on the shelves)"
+                        : $"{ItemName(need.Key)} (only {have})");
+            }
+
+            if (missing.Count > 0)
+                return $"I can't make {DisplayName(order)} — I need {string.Join(", ", missing)}.";
             return $"I'm waiting on ingredients or running mixes for {DisplayName(order)}.";
         }
 
         private static string DisplayName(ChemistOrderState order) =>
             string.IsNullOrEmpty(order.TargetName) ? order.TargetProductId : order.TargetName;
+
+        private static string ItemName(string id)
+        {
+            if (string.IsNullOrEmpty(id))
+                return id;
+            try
+            {
+                ItemDefinition def = Registry.GetItem(id);
+                return def != null && !string.IsNullOrEmpty(def.Name) ? def.Name : id;
+            }
+            catch { return id; }
+        }
 
         private static string DefId(ItemInstance inst)
         {

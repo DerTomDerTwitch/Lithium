@@ -44,5 +44,11 @@ namespace Lithium.Modules.Products
             // filter bar is reconstructed cleanly against the new ProductManagerApp instance.
             ProductListFilter.Reset();
         }
+
+        // Forwarded from Core.OnUpdate: keep the Products-app filter bar hidden unless that app is open.
+        public void DriveUpdate()
+        {
+            ProductListFilter.DriveVisibility();
+        }
     }
 }

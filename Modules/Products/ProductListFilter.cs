@@ -100,6 +100,27 @@ namespace Lithium.Modules.Products
             }
         }
 
+        // Per-frame visibility gate (driven from Core.OnUpdate via ModProducts.DriveUpdate).
+        //
+        // The SetOpen postfix alone can't be trusted to hide the bar: in IL2CPP the SetOpen(false) call on
+        // the app-close path (closeApps delegate -> App.Close -> this.SetOpen) is devirtualized and inlined
+        // into Close, so our postfix never fires there and the bar lingers over other apps. But the bar's
+        // own ProductManagerApp.isOpen field is set inside the *vanilla* SetOpen body, which always runs —
+        // so polling it each frame reliably tracks the real open/close state regardless of patch inlining.
+        public static void DriveVisibility()
+        {
+            if (!_built || _bar == null || _app == null)
+                return;
+
+            if (!Enabled)
+            {
+                SetVisible(false);
+                return;
+            }
+
+            SetVisible(_app.isOpen);
+        }
+
         // Shows/hides the whole filter bar (search field + effects button) and collapses the effects panel.
         // Driven from the Products app's open/close so the overlay is only ever visible on that app.
         public static void SetVisible(bool visible)

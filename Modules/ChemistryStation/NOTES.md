@@ -2,33 +2,47 @@
 
 ## ModChemistryStation.cs
 
-`ModChemistryStationConfiguration` exposes a single `Speed` float (default `1f`).
-Semantics: `1` = vanilla speed, `>1` speeds the cook up, `<1` slows it down, `0` pauses it entirely.
-`Apply()` is a no-op beyond the enabled guard; all runtime behaviour lives in the patch.
+`ModChemistryStationConfiguration` exposes a single `CookDurationMinutes` float (default `60`): the **total
+in-game minutes a full cook should take** when the module is enabled, regardless of the recipe's vanilla
+`CookTime_Mins`. `Apply()` is a no-op beyond the enabled guard; all runtime behaviour lives in the patch.
 
-No other meaningful comments.
+> Replaces the previous `Speed` multiplier. Existing `ChemistryStation.json` files keep working: the orphaned
+> `Speed` key is dropped on first load and `CookDurationMinutes` is written with its default.
 
 ---
 
-## Patches/ChemistryCookOperationProgressPatch.cs
+## Patches/ChemistryStationDurationPatch.cs
 
-**Patches:** `ChemistryCookOperation.Progress` (Harmony prefix + postfix).
+**Patches:** `ChemistryStation.OnTimePass` (prefix, `ref int minutes`).
 
-### Why this approach
+### What it does
 
-`ChemistryCookOperation` has no `GetCookDuration` method to scale (unlike `OvenCookOperation` or `MixingStation`), so a duration-scaling approach is not available.
-Instead, the patch intercepts the `mins` parameter that vanilla passes to `Progress` and rescales it: `mins * Speed`.
+Scales the per-tick minute count so the cook reaches its (unchanged) threshold in exactly
+`CookDurationMinutes`. Vanilla completes when `CurrentTime >= Recipe.CookTime_Mins`, advancing
+`CurrentTime += minutes` each tick, so `speed = Recipe.CookTime_Mins / CookDurationMinutes` and `minutes` is
+multiplied by it. The base duration is read live from `CurrentCookOperation.Recipe.CookTime_Mins`.
+
+### Why this patch point
+
+`OnTimePass` is the un-inlinable chokepoint (delegate-bound to `onTimeSkip`, reached per-minute via
+`OnMinPass → OnTimePass(1)`) and it calls `CurrentCookOperation.Progress(minutes)`. Earlier the duration was
+scaled inside `ChemistryCookOperation.Progress`, but that 3-line helper is inlined by the IL2CPP build, so the
+patch silently never ran — `OnTimePass` is reached on both the awake and sleep-skip paths.
 
 ### Fractional carry
 
-`CurrentTime` is an integer; vanilla advances it by `mins` each call and completes once it reaches the recipe duration.
-Naively truncating `mins * Speed` to an integer would cause slow-down values (`Speed < 1`) to repeatedly floor to zero and stall the cook entirely.
-To prevent this, a per-operation fractional carry is accumulated in the `Carry` dictionary and added to the next scaled value before flooring. This keeps slow-down accurate, and speed-up / pause (`Speed == 0`) also work correctly — without duplicating any vanilla completion logic.
+`CurrentTime` is an integer; a slow cook (`speed < 1`) would repeatedly floor to zero and stall. A
+per-station carry, keyed by `__instance.Pointer` (the stable native IL2CPP pointer), accumulates the
+fractional remainder and adds it back before flooring. The original `OnTimePass` still runs and handles all
+completion/state logic itself — the prefix only rewrites `minutes`.
 
-### Carry dictionary key
+### Freeze interplay
 
-The dictionary is keyed by `__instance.Pointer` (the native IL2CPP object pointer) rather than the managed wrapper object. The pointer is stable for the lifetime of the operation. Entries are pruned in the `Postfix` when `IsComplete()` returns true, preventing unbounded growth.
+When a higher-priority freeze prefix (EndOfDay / ElectricBill power-cut) returns false, the prefix sees
+`__runOriginal == false` and returns without accruing carry against a tick that won't apply.
 
-### No vanilla logic duplication
+### Note on the clock
 
-The patch only rewrites `mins`; the prefix returns normally so the original `Progress` method still runs and handles all completion/state logic itself.
+The station's alarm display shows the vanilla recipe time counting down (`Recipe.CookTime_Mins - CurrentTime`),
+so it counts from the recipe's base time over the configured real duration rather than from
+`CookDurationMinutes`. This matches how the old speed multiplier behaved.

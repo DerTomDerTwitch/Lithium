@@ -167,6 +167,9 @@ namespace Lithium
 
             Get<ModPhoneApp>()?.DriveUpdate();
             Get<ModPolice>()?.DriveUpdate();
+            Get<ModElectricBill>()?.DriveUpdate();
+            Get<ModRent>()?.DriveUpdate();
+            Get<ModProducts>()?.DriveUpdate();
         }
     }
 }

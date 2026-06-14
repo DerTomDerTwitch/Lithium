@@ -2,30 +2,38 @@
 
 ## ModLabOven.cs
 
-**What it does:** Defines the `ModLabOven` module and its configuration. The only tuneable is `Speed` (float, default `1.0`), a cook-speed multiplier applied to the lab oven. The `Apply()` method is a no-op beyond the enabled guard — all runtime behaviour is handled entirely through Harmony patches.
+**What it does:** Defines the `ModLabOven` module and its configuration. The only tuneable is
+`CookDurationMinutes` (float, default `60`), the **total in-game minutes a full cook should take** when the
+module is enabled, regardless of the ingredient's vanilla `CookableModule.CookTime`. `Apply()` is a no-op
+beyond the enabled guard — all runtime behaviour is handled through a Harmony patch.
 
-**No meaningful comments in source.**
-
----
-
-## Patches/OvenCookOperationGetCookDurationPatch.cs
-
-**Patched method:** `OvenCookOperation.GetCookDuration` (postfix)
-
-**What it does:** Divides the game's raw cook-duration result by `config.Speed`, effectively scaling how long a cook takes. A `Speed` value greater than 1.0 shortens cook time; less than 1.0 lengthens it. Uses `Mathf.FloorToInt` to keep the result an integer (matching the game's `int` return type).
-
-**Non-obvious reasoning:** The duration is shortened by *dividing* (not multiplying), so the config field is named as a speed multiplier from the player's perspective — doubling `Speed` halves the duration.
-
-**No meaningful comments in source.**
+> Replaces the previous `Speed` multiplier. Existing `LabOven.json` files keep working: the orphaned `Speed`
+> key is dropped on first load and `CookDurationMinutes` is written with its default.
 
 ---
 
-## Patches/OvenCookOperationIsReadyPatch.cs
+## Patches/LabOvenDurationPatch.cs
 
-**Patched method:** `OvenCookOperation.IsReady` (postfix)
+**Patched method:** `LabOven.OnTimePass` (prefix, `ref int minutes`)
 
-**What it does:** Overrides the `IsReady` result by recomputing it as `CookProgress >= GetCookDuration()`. This ensures the readiness check always uses the (already-patched) `GetCookDuration()` value rather than whatever the base game's `IsReady` computed — keeping the two patches consistent with each other.
+**What it does:** Scales the per-tick minute count so the cook reaches its (unchanged) completion threshold
+in exactly `CookDurationMinutes`. Vanilla completes when `CookProgress >= GetCookDuration()` advancing one
+minute per tick, so `speed = vanillaDuration / CookDurationMinutes` and `minutes` is multiplied by it. The
+live operation's base duration is read from `CurrentOperation.GetCookDuration()`.
 
-**Gotcha:** Without this patch, the base `IsReady` logic might cache or compute duration independently of `GetCookDurationPatch`, causing the oven to never finish (or finish instantly) at non-default `Speed` values. This postfix guarantees correctness.
+**Why patch `OnTimePass`, not `GetCookDuration`:** `GetCookDuration` is inlined at the completion sites in the
+IL2CPP build, so a patch on it silently never affects when a cook finishes. `OnTimePass` is the un-inlinable
+chokepoint (delegate-bound to `onTimeSkip`, reached per-minute via `OnUncappedMinPass → OnTimePass(1)`), and
+it advances `CurrentOperation.UpdateCookProgress(minutes)` — so scaling `minutes` works on both the awake and
+sleep-skip paths.
 
-**No meaningful comments in source.**
+**Fractional carry:** `CookProgress` is an integer; a slow cook (`speed < 1`) would repeatedly floor to zero
+and stall. A per-oven carry (keyed by `__instance.Pointer`) accumulates the fractional remainder and adds it
+back before flooring.
+
+**Freeze interplay:** When a higher-priority freeze prefix (ElectricBill power-cut) returns false, the prefix
+sees `__runOriginal == false` and returns without accruing carry against a tick that won't apply.
+
+**Note on the clock:** The oven's on-screen timer shows the vanilla cook duration counting down (it reads
+`GetCookDuration() - CookProgress`), so it counts from the ingredient's base time over the configured real
+duration rather than from `CookDurationMinutes`. This matches how the old speed multiplier behaved.

@@ -1,5 +1,4 @@
 using HarmonyLib;
-using Il2CppFishNet;
 using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.ItemFramework;
 using Il2CppScheduleOne.Quests;
@@ -24,8 +23,13 @@ namespace Lithium.Modules.Customers.Patches
             if (modCustomers == null)
                 return;
 
-            if (!InstanceFinder.IsServer)
-                return;
+            // No InstanceFinder.IsServer gate. ProcessHandoverServerSide is a [ServerRpc] whose
+            // body only writes the RPC, so this prefix runs on the *initiating* peer (the client
+            // for a client's own delivery; the host for dealer handovers) and mutates the
+            // `totalPayment` argument *before* it is serialized and sent to the host. A server gate
+            // here would make a client's delivery send the un-bonused payment. This mirrors how
+            // vanilla folds its own curfew/quality/quick-delivery bonuses into totalPayment from the
+            // initiator side in ProcessHandover; the bonus is consumed exactly once, server-side.
 
             ModCustomersConfiguration config = modCustomers.Configuration;
             if (!config.Enabled || !config.EffectBonus.Enabled)

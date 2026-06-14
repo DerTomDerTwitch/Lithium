@@ -23,8 +23,10 @@ namespace Lithium.Modules.Employees.ProductionOrders
     // mixing stations (intermediates fed back in), deposit the result at each station's destination.
     internal static class ChemistOrderService
     {
-        internal static readonly SaveSlotStore<ChemistOrderState> Store = new("ChemistOrders", "chemist orders");
-        private static readonly SaveSlotStore<List<OrderHistoryEntry>> HistoryStore = new("ChemistOrders", "chemist order history");
+        // Two stores share the ChemistOrders folder, so each needs a distinct file discriminator — otherwise both
+        // write "{saveKey}.json" and the history flush overwrites the active-order file (orders never persisted).
+        internal static readonly SaveSlotStore<ChemistOrderState> Store = new("ChemistOrders", "chemist orders", "orders");
+        private static readonly SaveSlotStore<List<OrderHistoryEntry>> HistoryStore = new("ChemistOrders", "chemist order history", "history");
         private const string HistoryKey = "__history__";
         private const int HistoryCap = 12;
 
@@ -152,6 +154,33 @@ namespace Lithium.Modules.Employees.ProductionOrders
             Log.Info($"[ChemistOrders] Order set for {SafeName(chemist)}: {quantity}x {order.TargetName} " +
                      $"({chain.Count}-step chain, {shelfGuids.Count} shelf/shelves).");
             return true;
+        }
+
+        // Player-requested stop: empties the chemist's carried order items and its stations' loaded slots into the
+        // designated output (each station's configured destination route, else an assigned shelf), releases the
+        // reserved shelf-slot locks, and removes the order. Host-only (clients route a cancel via ChemOrderNet).
+        public static void StopOrder(Il2CppChemist chemist)
+        {
+            if (chemist == null || !InstanceFinder.IsServer)
+                return;
+
+            string key;
+            try { key = chemist.GUID.ToString(); }
+            catch { return; }
+
+            if (!Store.TryGet(key, out ChemistOrderState order) || order == null)
+                return;
+
+            List<ITransitEntity> shelves = ResolveShelfEntities(order.ShelfGuids);
+
+            // Release the reserved locks first so the freed shelf slots can receive drained ingredients
+            // (InsertItemIntoInput skips locked slots).
+            OrderSlotLocks.Release(chemist, shelves);
+            Orchestrator.Drain(chemist, order, shelves);
+
+            Store.Remove(key);
+            Orchestrator.Reset();
+            Log.Info($"[ChemistOrders] Order stopped for {SafeName(chemist)}; slots freed and items returned to output.");
         }
 
         public static void ClearOrder(Il2CppChemist chemist)

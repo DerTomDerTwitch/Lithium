@@ -491,7 +491,9 @@
 		<Compile Include="Log.cs" />
 		<Compile Include="Helper\CollectionConverter.cs" />
 		<Compile Include="Helper\ConfigValidator.cs" />
+		<Compile Include="Helper\GameDay.cs" />
 		<Compile Include="Helper\HostStateSync.cs" />
+		<Compile Include="Helper\SaveFlushPatch.cs" />
 		<Compile Include="Helper\VariableSyncGuardPatch.cs" />
 		<Compile Include="Helper\ProductHelper.cs" />
 		<Compile Include="Helper\RankHelper.cs" />
@@ -501,7 +503,7 @@
 		<Compile Include="Modules\BrickPress\ModBrickPress.cs" />
 		<Compile Include="Modules\BrickPress\Patches\BrickPressBeginButtonPatch.cs" />
 		<Compile Include="Modules\ChemistryStation\ModChemistryStation.cs" />
-		<Compile Include="Modules\ChemistryStation\Patches\ChemistryStationSpeedPatch.cs" />
+		<Compile Include="Modules\ChemistryStation\Patches\ChemistryStationDurationPatch.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\ModEndOfDayFreeze.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\EndOfDayGate.cs" />
 		<Compile Include="Modules\EndOfDayFreeze\Patches\DryingRackFreezePatch.cs" />
@@ -529,7 +531,6 @@
 		<Compile Include="Modules\Rent\RentDebug.cs" />
 		<Compile Include="Modules\Rent\Patches\DeadDropClosePatch.cs" />
 		<Compile Include="Modules\Rent\Patches\PropertyDoorAccessPatch.cs" />
-		<Compile Include="Modules\Rent\Patches\RentDailyTickPatch.cs" />
 		<Compile Include="Modules\Dealers\ModDealers.cs" />
 		<Compile Include="Modules\Dealers\Architecture\DealerMessenger.cs" />
 		<Compile Include="Modules\Dealers\Architecture\DealerWeaponInspector.cs" />
@@ -597,6 +598,7 @@
 		<Compile Include="Modules\Customers\Patches\CustomerOfferSuccessPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerCompletionTrackPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerProcessHandoverPatch.cs" />
+		<Compile Include="Modules\Customers\Patches\HandoverSlotCountPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\CustomerSampleConsumedPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\ProductListingPatch.cs" />
 		<Compile Include="Modules\Customers\Patches\DeliveryAppPatch.cs" />
@@ -620,7 +622,7 @@
 		<Compile Include="Modules\DryingRacks\Patches\DryingOperationUIPatch.cs" />
 		<Compile Include="Modules\DryingRacks\Patches\DryingOperationPatch.cs" />
 		<Compile Include="Modules\LabOven\ModLabOven.cs" />
-		<Compile Include="Modules\LabOven\Patches\LabOvenSpeedPatch.cs" />
+		<Compile Include="Modules\LabOven\Patches\LabOvenDurationPatch.cs" />
 		<Compile Include="Modules\Shops\Patches\DeliveryShopFeePatch.cs" />
 		<Compile Include="Modules\Shops\Patches\ForceUpdateShopPrices.cs" />
 		<Compile Include="Modules\Shops\Patches\SupplierStartPatch.cs" />
@@ -630,7 +632,6 @@
 		<Compile Include="Modules\ElectricBill\ApplianceStateResolver.cs" />
 		<Compile Include="Modules\ElectricBill\ElectricBillGate.cs" />
 		<Compile Include="Modules\ElectricBill\ElectricBillNotifier.cs" />
-		<Compile Include="Modules\ElectricBill\Patches\ElectricBillTickPatch.cs" />
 		<Compile Include="Modules\ElectricBill\Patches\TimeSkipBillingPatch.cs" />
 		<Compile Include="Modules\ElectricBill\Patches\ChemistryStationFreezePatch.cs" />
 		<Compile Include="Modules\ElectricBill\Patches\MixingStationFreezePatch.cs" />
@@ -657,6 +658,7 @@
 		<Compile Include="Modules\Employees\Patches\ChemistOrderUpdateBehaviourPatch.cs" />
 		<Compile Include="Modules\Employees\Patches\ChemistOrderDialoguePatch.cs" />
 		<Compile Include="Modules\Employees\Patches\ChemOrderRequestPatch.cs" />
+		<Compile Include="Modules\Employees\Patches\OrderSlotRestockReleasePatch.cs" />
 		<Compile Include="Modules\PhoneApp\ModPhoneApp.cs" />
 		<Compile Include="Modules\PhoneApp\LithiumPhoneApp.cs" />
 		<Compile Include="Modules\PhoneApp\PhoneAppBuilder.cs" />
@@ -693,7 +695,7 @@
 		<Compile Include="Util\WeightedPicker.cs" />
 		<Compile Include="Modules\MixingStations\ModMixingStations.cs" />
 		<Compile Include="Modules\MixingStations\Patches\MixingStationCapacityPatch.cs" />
-		<Compile Include="Modules\MixingStations\Patches\MixingStationSpeedPatch.cs" />
+		<Compile Include="Modules\MixingStations\Patches\MixingStationDurationPatch.cs" />
 		<Compile Include="Modules\Products\ModProducts.cs" />
 		<Compile Include="Modules\Products\ProductFilterUi.cs" />
 		<Compile Include="Modules\Products\ProductListFilter.cs" />

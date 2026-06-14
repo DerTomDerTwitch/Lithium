@@ -4,7 +4,11 @@
     {
         public override string Name => "ChemistryStation";
 
-        public float Speed = 1f;
+        /// <summary>
+        /// Total in-game minutes a full cook should take when the module is enabled, regardless of the
+        /// recipe's vanilla cook time. Replaces the old <c>Speed</c> multiplier.
+        /// </summary>
+        public float CookDurationMinutes = 60f;
     }
     public class ModChemistryStation : ModuleBase<ModChemistryStationConfiguration>
     {

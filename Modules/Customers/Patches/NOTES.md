@@ -179,13 +179,20 @@ Only runs when `InstanceFinder.IsServer` is true. Scheduling is server-authorita
 
 ## CustomerBulkRewardPatch.cs
 
-**Patches:** `Customer.ProcessHandoverServerSide` — **Prefix + Postfix**
+**Patches:** `Customer.ProcessHandover` — **Prefix + Postfix**
 
 ### Purpose
-Bulk orders consolidate several normal orders into a single delivery. Vanilla grants the same per-deal affection and XP regardless of order size, so a weekly order worth ~7 daily orders would pay out like one deal. This patch measures the affection and XP the game awards for this handover and adds the remainder, so the total scales with the order's quantity multiplier (a 7x-volume order → ~7x reward).
+Bulk orders consolidate several normal orders into a single delivery. Vanilla grants the same per-deal affection and XP regardless of order size, so a weekly order worth ~7 daily orders would pay out like one deal. This patch scales the affection gain and adds the XP remainder, so the total scales with the order's quantity multiplier (a 7x-volume order → ~7x reward).
 
-### Why "measure + top up" rather than granting a constant
-Measuring the game's own award keeps the bonus exactly multiplier-times the real reward whatever the game's internal formula is, and makes a duplicate `ProcessHandoverServerSide` fire harmless — the second pass measures a ~0 gain and tops up nothing.
+### Why `ProcessHandover`, **not** `ProcessHandoverServerSide`
+This patch originally hooked `ProcessHandoverServerSide` and measured a `RelationDelta`/`TotalXP` delta around it — **both deltas were always zero**, so neither bonus ever applied (the symptom: "I don't get 7x XP on a bulk delivery"). Two separate reasons, both rooted in the async/ordering of the handover:
+- **Affection** — `NPC.RelationData.ChangeRelationship(...)` runs *synchronously inside* `ProcessHandover`, **before** it calls the `ProcessHandoverServerSide` RPC writer. By the time a writer prefix runs, `RelationDelta` already holds the post-change value, so `after − before == 0`.
+- **XP** — `ProcessHandoverServerSide` is `[ServerRpc]` with **no `RunLocally`**, so it only *writes* the RPC; the `AddXP(20)`/`AddXP(10)` lives in the deferred `RpcLogic___ProcessHandoverServerSide`. Worse, `LevelManager.AddXP` is itself a `ServerRpc → ObserversRpc` chain that only bumps `TotalXP` several network ticks later. So `TotalXP` never moves within the synchronous call window — a delta around *any* method is zero.
+
+Patching `ProcessHandover` (the caller) fixes both: the `ChangeRelationship` happens *inside* the patched body so its delta is measurable, and the base XP is a flat constant (20 player / 10 player-dealer / 0 cartel — see `RpcLogic___ProcessHandoverServerSide`) so the bonus is awarded directly via `AddXP`, no measurement needed. `ProcessHandover` is a large `virtual` with an external caller (`RequestProductBehaviour`), so it is not inlined/devirtualized away.
+
+### Affection: measure + top up; XP: direct grant
+Measuring the relationship delta keeps the affection bonus exactly multiplier-times the game's own gain (and naturally respects the 0–5 `RelationDelta` clamp). XP can't be measured (see above), so `ResolveBaseXp` reproduces the vanilla flat grant and the postfix adds `round(base * extra)`.
 
 ### `_armed` flag
 Prefix sets `_armed = true` only when all conditions pass (outcome == `Finalize`, server, order patterns enabled, XP gate passed, multiplier > 1). Postfix is a no-op if `_armed` is false.
@@ -199,8 +206,15 @@ The game already paid one order's worth of reward. "extra" covers the remaining 
 ### Condition to run
 Gated by `config.OrderPatterns.Enabled` and `LevelManager.Instance.TotalXP >= config.Contracts.XPRequired`, identical to the gate `CustomerContractGenerationPatch` and `CustomerGetOrderDaysPatch` use, so the reward scaling only activates when the order size reshaping is also active.
 
-### Server-authoritative
-Only runs when `InstanceFinder.IsServer` is true.
+### Multiplayer (no server gate)
+**Deliberately not gated on `InstanceFinder.IsServer`.** `ProcessHandover` runs exactly once per
+handover on the *initiating* peer (the client for a client's own player-handover; the server for
+dealer handovers), so an `IsServer` gate would silently skip every client-initiated delivery — the
+original bug. Both rewards self-route to the server and replicate to all peers: `AddXP` is a
+`[ServerRpc]`, and `ChangeRelationship(network:true)` → `NPC.SendRelationship` is a `[ServerRpc]`
+the server re-broadcasts via the `SetRelationship` `[ObserversRpc]` (vanilla applies the base
+relationship from this same method this way). Applied once on the initiator → correct on all peers,
+no double-application (the server runs `RpcLogic___ProcessHandoverServerSide`, not `ProcessHandover`).
 
 ---
 
@@ -321,6 +335,33 @@ Bonus handlers roll random amounts. Only the server may apply them; pure clients
 
 ### Config gate
 Gated by `config.EffectBonus.Enabled`. If `!handoverByPlayer && !config.EffectBonus.AffectsDealers`, dealers' handovers are skipped.
+
+---
+
+## HandoverSlotCountPatch.cs
+
+**Patches:** `HandoverScreen.Start` — **Postfix**
+
+### Purpose
+Expands the handover screen (Complete Deal / Give Free Sample / Offer Deal) beyond its hardcoded 4 product slots, so a single handover can carry more product (e.g. a bulk order whose required quantity exceeds 4 stacks). Driven by `Customers.HandoverSlotCount` (default 4 = vanilla, no-op; clamped 4–12 in `Validate`).
+
+### Why `CUSTOMER_SLOT_COUNT` is NOT the gate
+The `HandoverScreen.CUSTOMER_SLOT_COUNT = 4` const is inlined at compile time and **never read** (confirmed: the only hit in the Mono source is its declaration — classic inlined-`const` trap). The real slot count is the length of the private `CustomerSlots` array (`new ItemSlot[4]`) plus the `ItemSlotUI` children of `CustomerSlotContainer` discovered in `Start`. Every consumer (`Close`, `ClearCustomerSlots`, `GetCustomerItems`/`Count`/`Value`, `GetError`/`GetWarning`) iterates `CustomerSlots.Length`, so growing the array + adding matching UIs is sufficient; the server-side `Customer.ProcessHandoverServerSide` just receives the longer item list.
+
+### Why `Start` (not the const, not a private helper)
+`Start` is a `MonoBehaviour` lifecycle method → reliably patchable in IL2CPP (the inlinable private helpers like `CustomerItemsChanged` are not patch points). Both `CustomerSlots` and `CustomerSlotUIs` are exposed as public settable properties by the interop, so the grown arrays can be swapped in directly.
+
+### Mechanism (per extra slot)
+Clone the last existing slot UI under `CustomerSlotContainer`, create a fresh `ItemSlot`, set its `onItemDataChanged` to the screen's private `CustomerItemsChanged` **first**, then call `AssignSlot` — which combines the UI's own refresh handler on top. Doing it in that order lets the game perform the IL2CPP delegate-combine, so the patch never calls `Il2CppSystem.Delegate.Combine`/`Cast` itself. Without the `CustomerItemsChanged` wiring, filling only a new slot would leave the Done button / success-chance / fair-price stale until an original slot is touched.
+
+### Delegate rooting
+The managed callback that re-invokes `CustomerItemsChanged` (via cached `MethodInfo`) is converted to `Il2CppSystem.Action` with `DelegateSupport.ConvertDelegate` and kept in a static `RootedHandlers` list so IL2CPP interop can't GC it.
+
+### Independent of module `Enabled`
+Acts purely on `HandoverSlotCount` (4 = no-op), so extra slots can be enabled without turning on the rest of the Customers rework. Local UI only — no networking concern.
+
+### Caveat
+`CustomerSlotContainer`'s layout group arranges the cloned slots; very high counts can overflow the panel visually (hence the 12 cap). Verify in-game.
 
 ---
 

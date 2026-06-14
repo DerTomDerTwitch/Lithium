@@ -474,7 +474,9 @@ namespace Lithium.Modules.PhoneApp
             }
 
             if (ev.PoweredOff)
-                AddLine($"<color={RedHex}>POWER CUT — ${ev.OutstandingBill:N0} unpaid</color>", 28, Red, 36f);
+                AddLine($"<color={RedHex}>POWER CUT — ${ev.OutstandingBill:N0} unpaid. Pay at the dead drop.</color>", 28, Red, 36f);
+            else if (ev.OutstandingBill > 0f)
+                AddLine($"Bill due: <color={RedHex}>${ev.OutstandingBill:N0}</color> <color={Dim}>— pay in cash at the dead drop</color>", 28, Color.white, 36f);
 
             if (ev.Lines.Count == 0)
             {

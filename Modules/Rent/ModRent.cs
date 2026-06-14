@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using Il2CppFishNet;
 using Il2CppScheduleOne.Economy;
 using Il2CppScheduleOne.GameTime;
@@ -92,6 +93,18 @@ namespace Lithium.Modules.Rent
         private bool _baselineReady;
         private int _lastElapsedDay = -1;
         private bool _initialised;
+        private float _nextDriveTime;
+
+        // TEMP throttled diagnostics (caps each unique key at a few prints) — surfaces WHY the rent tick may
+        // bail, without flooding the log. Uses Log.Warning so it shows even with Debug off.
+        private static readonly Dictionary<string, int> _diag = new();
+        private static void Diag(string key, string detail = null)
+        {
+            if (_diag.TryGetValue(key, out int c) && c >= 5)
+                return;
+            _diag[key] = c + 1;
+            Log.Warning($"[Rent][DIAG] {key}{(detail != null ? " " + detail : "")}");
+        }
 
         public override void Apply()
         {
@@ -105,6 +118,8 @@ namespace Lithium.Modules.Rent
             _baselineReady = false;
             _lastElapsedDay = -1;
             _initialised = false;
+            _nextDriveTime = 0f;
+            _diag.Clear();
 
             MelonCoroutines.Start(LoadReminderRoutine());
         }
@@ -132,6 +147,39 @@ namespace Lithium.Modules.Rent
             MessagingManager.Instance != null
             && NPCManager.NPCRegistry != null && NPCManager.NPCRegistry.Count > 0;
 
+        // Frame-based driver, forwarded from Core.OnUpdate. Replaces the old TimeManager.PassMinute hook:
+        // PassMinute is driven by the game's TimeLoop, which stalls whenever game-time is paused (ESC/pause
+        // menu, timeScale == 0) or not yet flowing — so the rent tick (and with it the load-time lockout
+        // reconcile + door enforcement) would silently never run until the player let the in-game clock
+        // advance. OnUpdate fires every frame regardless, so the lockout now engages on load and the door
+        // locks even while paused. Host-only: rent state is authoritative on the server and replicated to
+        // clients via HostStateSync (the old PassMinute hook was implicitly host-only because TimeLoop runs
+        // only on the server; that guarantee is restored here by the explicit IsServer check).
+        public void DriveUpdate()
+        {
+            if (!Configuration.Enabled)
+                return;
+            if (!InstanceFinder.IsServer)
+                return;
+
+            // Throttle to ~1s real-time. The rent logic's real granularity is day-level; polling ElapsedDays
+            // once a second catches a day rollover within a second of it happening in-game, and keeps the
+            // per-frame cost negligible.
+            float now = Time.realtimeSinceStartup;
+            if (now < _nextDriveTime)
+                return;
+            _nextDriveTime = now + 1f;
+
+            try
+            {
+                Tick();
+            }
+            catch (Exception e)
+            {
+                Log.Warning($"[Rent] Drive update failed: {e.Message}");
+            }
+        }
+
         public void Tick()
         {
             if (!Configuration.Enabled)
@@ -139,21 +187,33 @@ namespace Lithium.Modules.Rent
 
             TimeManager time = TimeManager.Instance;
             if (time == null)
+            {
+                Diag("time-null");
                 return;
+            }
 
             // Don't touch rent state until the save is fully loaded and the per-save baseline has been written.
             // EnsureBaseline decides — exactly once per save, persisted to disk — which properties pre-existed
             // (billed immediately) versus which are fresh purchases (grace). Until it succeeds, the owned-property
             // list may be incomplete and any decision we made would be wrong.
             if (!EnsureBaseline())
+            {
+                Diag("baseline-false", DescribeLoadState());
                 return;
+            }
 
             int today = time.ElapsedDays;
+            Diag("tick-run", $"today={today} init={_initialised}");
 
             if (!_initialised)
             {
                 DiscoverLocations();
                 RebuildLockedFromState();
+                // Enforce any lockout whose threshold was crossed since the last time ProcessDay ran (e.g.
+                // across the reload boundary that resets _lastElapsedDay). Without this, a property that went
+                // overdue while the game was closed reads as long-overdue yet stays accessible until the next
+                // live day rollover.
+                ReconcileLockoutsOnLoad(today);
                 PublishAll();
                 _lastElapsedDay = today;
                 _initialised = true;
@@ -183,6 +243,14 @@ namespace Lithium.Modules.Rent
         // fresh purchase (grace), never a pre-existing one. This is what makes a freshly-bought property survive
         // a reload/Alt+F4 without being billed on the spot. Gated on LoadManager reporting a fully loaded save so
         // the owned-property list is populated before we snapshot it. Returns true once the baseline exists.
+        private static string DescribeLoadState()
+        {
+            LoadManager lm = LoadManager.Instance;
+            if (lm == null)
+                return "lm=null";
+            return $"loaded={lm.IsGameLoaded} loading={lm.IsLoading} status={lm.LoadStatus} server={InstanceFinder.IsServer}";
+        }
+
         private bool EnsureBaseline()
         {
             if (_baselineReady)
@@ -360,34 +428,20 @@ namespace Lithium.Modules.Rent
                     messaged = true;
                 }
 
-                if (state.Owed > 0f && state.DueSinceDay >= 0)
+                // Warning / lockout transition. Extracted into ReconcileOverdue so the SAME evaluation also
+                // runs on load (ReconcileLockoutsOnLoad) and in SendLoadReminders — otherwise a threshold
+                // crossed while ProcessDay wasn't watching the day roll over (charges caught up at load, or a
+                // reload that reset the day tracker) would never lock the property, leaving it readable as
+                // long-overdue yet still accessible.
+                string transition = ReconcileOverdue(prop, loc, code, state, today);
+                if (transition != null)
                 {
-                    int overdue = today - state.DueSinceDay;
-
-                    if (Configuration.SendFinalWarning && !state.WarningSent
-                        && Configuration.DaysUntilLockout >= 1 && overdue == Configuration.DaysUntilLockout - 1)
-                    {
-                        state.WarningSent = true;
-                        RentMessenger.Send(loc,
-                            $"Final warning: ${state.Owed:N0} rent still owed for {prop.PropertyName}. " +
-                            $"Pay at {loc.DeadDropName} by tomorrow or you're locked out.");
-                        messaged = true;
-                    }
-
-                    if (overdue >= Configuration.DaysUntilLockout)
-                    {
-                        state.LockedOut = true;
-                        LockedCodes.Add(code);
-                        RentMessenger.Send(loc,
-                            $"You're locked out of {prop.PropertyName}. Pay the ${state.Owed:N0} you owe at " +
-                            $"{loc.DeadDropName} to get back in.");
-                        messaged = true;
-                    }
-                    else if (!messaged)
-                    {
-                        RentMessenger.Send(loc, ReminderMessage(prop, loc, state.Owed));
-                    }
+                    RentMessenger.Send(loc, transition);
+                    messaged = true;
                 }
+
+                if (state.Owed > 0f && state.DueSinceDay >= 0 && !state.LockedOut && !messaged)
+                    RentMessenger.Send(loc, ReminderMessage(prop, loc, state.Owed));
 
                 Store.Set(code, state);
                 PublishState(code, state);
@@ -418,6 +472,74 @@ namespace Lithium.Modules.Rent
             return charged;
         }
 
+        // Applies the final-warning and lockout transitions for a location based on its CURRENT overdue
+        // count. A pure function of (today, state): unlike the surrounding day-gated messaging in ProcessDay,
+        // this is safe to run on load and on any day, so a lockout threshold crossed while ProcessDay wasn't
+        // watching the day roll over (charges caught up at load by SendLoadReminders, or a day advanced
+        // across a reload that reset _lastElapsedDay) is still enforced. Mutates state (LockedOut /
+        // WarningSent) and LockedCodes; returns the message for a NEW transition, or null if nothing changed
+        // (already locked, paid up, or not yet at a threshold). Lockout is checked before the warning because
+        // a catch-up can jump straight past the warning day.
+        private string ReconcileOverdue(Property prop, RentLocationConfiguration loc, string code, RentLocationState state, int today)
+        {
+            if (state.LockedOut || state.Owed <= 0f || state.DueSinceDay < 0)
+                return null;
+
+            int overdue = today - state.DueSinceDay;
+
+            if (overdue >= Configuration.DaysUntilLockout)
+            {
+                state.LockedOut = true;
+                LockedCodes.Add(code);
+                return $"You're locked out of {prop.PropertyName}. Pay the ${state.Owed:N0} you owe at " +
+                       $"{loc.DeadDropName} to get back in.";
+            }
+
+            if (Configuration.SendFinalWarning && !state.WarningSent
+                && Configuration.DaysUntilLockout >= 1 && overdue == Configuration.DaysUntilLockout - 1)
+            {
+                state.WarningSent = true;
+                return $"Final warning: ${state.Owed:N0} rent still owed for {prop.PropertyName}. " +
+                       $"Pay at {loc.DeadDropName} by tomorrow or you're locked out.";
+            }
+
+            return null;
+        }
+
+        // Re-evaluates every owned, rent-enabled location's lockout/warning against the CURRENT overdue count
+        // the moment a save finishes loading. ProcessDay only crosses those thresholds on a live in-game day
+        // rollover, but the day can advance across a load boundary (every load resets _lastElapsedDay to
+        // today, so the rollover that pushed the property past the threshold is never "seen") or the charges
+        // can be caught up at load by SendLoadReminders (which never locks). Either way the property would
+        // accrue overdue days while staying unlocked. This pass closes that gap. State-only: the single load
+        // notification is left to SendLoadReminders, so the returned transition message is discarded here.
+        private void ReconcileLockoutsOnLoad(int today)
+        {
+            int seen = 0;
+            foreach ((Property prop, RentLocationConfiguration loc) in EnabledOwnedLocations())
+            {
+                seen++;
+                string code = prop.PropertyCode;
+                if (string.IsNullOrEmpty(code) || !Store.TryGet(code, out RentLocationState state))
+                {
+                    Diag("reconcile-skip", $"{prop.PropertyName} code={code} (no state)");
+                    continue;
+                }
+                if (state.LockedOut)
+                {
+                    Diag("reconcile-already-locked", prop.PropertyName);
+                    continue;
+                }
+
+                ApplyDueCharges(state, loc, today);
+                ReconcileOverdue(prop, loc, code, state, today);
+                Store.Set(code, state);
+                PublishState(code, state);
+                Diag("reconcile-loc", $"{prop.PropertyName} owed={state.Owed} due={state.DueSinceDay} today={today} -> locked={state.LockedOut}");
+            }
+            Diag("reconcile-done", $"ownedEnabled={seen}");
+        }
+
         private void SendLoadReminders()
         {
             if (!Configuration.Enabled)
@@ -439,7 +561,14 @@ namespace Lithium.Modules.Rent
                 RentLocationState state = Store.TryGet(code, out RentLocationState s) ? s : new RentLocationState();
 
                 if (!state.LockedOut)
+                {
                     ApplyDueCharges(state, loc, today);
+                    // Lock if already past the threshold, so the message below reflects it (StillLocked vs
+                    // Reminder). The transition text is discarded — the load reminder below is the single
+                    // notification. Harmless if the Tick init block already locked it (ReconcileOverdue no-ops
+                    // once LockedOut is set).
+                    ReconcileOverdue(prop, loc, code, state, today);
+                }
 
                 Store.Set(code, state);
                 PublishState(code, state);
@@ -555,52 +684,97 @@ namespace Lithium.Modules.Rent
 
             string code = prop.PropertyCode;
 
+            // The phone Property tab shows rent and electricity together, and electricity is paid here in cash
+            // (no bank auto-deduct). So this drop settles BOTH: rent first, then the same property's outstanding
+            // power bill from whatever cash is left — and reports them in ONE message from the landlord.
+
             // 1) Rent — take cash up to what's owed for this location.
+            float rentPaid = 0f, rentOwedAfter = 0f;
+            bool rentCleared = false, accessRestored = false;
             if (Store.TryGet(code, out RentLocationState state) && state.Owed > 0f)
             {
-                float paid = TakeCash(drop.Storage, state.Owed);
-                if (paid > 0f)
+                rentPaid = TakeCash(drop.Storage, state.Owed);
+                if (rentPaid > 0f)
                 {
-                    state.Owed -= paid;
+                    state.Owed -= rentPaid;
                     if (state.Owed < 0.01f)
                     {
                         state.Owed = 0f;
                         state.DueSinceDay = -1;
                         state.WarningSent = false;
-                        bool wasLocked = state.LockedOut;
+                        accessRestored = state.LockedOut;
                         state.LockedOut = false;
                         LockedCodes.Remove(code);
-                        RentMessenger.Send(loc, wasLocked
-                            ? $"Rent paid in full for {prop.PropertyName}. Your access is restored."
-                            : $"Received ${paid:N0}. {prop.PropertyName} rent is paid up. Thanks.");
+                        rentCleared = true;
                     }
-                    else
-                    {
-                        RentMessenger.Send(loc,
-                            $"Received ${paid:N0} toward {prop.PropertyName} rent. Still owed: ${state.Owed:N0} at {loc.DeadDropName}.");
-                    }
-
+                    rentOwedAfter = state.Owed;
                     Store.Set(code, state);
                     PublishState(code, state);
                 }
             }
 
-            // 2) Power bill — the phone app shows rent and electricity together per property, so the same
-            // dead drop also settles any outstanding power bill (what the bank auto-deduct couldn't cover).
-            // Without this, cash meant for the power bill would sit in the drop, ignored. Rent is taken first;
-            // whatever cash remains pays down the bill and restores power if it clears. No-op when the
-            // ElectricBill module is off or nothing is outstanding.
+            // 2) Power bill — settle this property's outstanding electricity from the remaining cash. Without
+            // this, cash meant for the power bill would sit in the drop, ignored. announce:false suppresses the
+            // ElectricBill module's own notification so the result is reported in the combined message below.
+            // No-op when the ElectricBill module is off or nothing is outstanding.
+            float electricPaid = 0f, electricOwedAfter = 0f;
+            bool electricCleared = false, powerRestored = false;
             ModElectricBill electric = Core.Get<ModElectricBill>();
             if (electric != null)
             {
                 float outstanding = electric.GetOutstandingBill(code);
                 if (outstanding > 0f)
                 {
-                    float billPaid = TakeCash(drop.Storage, outstanding);
-                    if (billPaid > 0f)
-                        electric.ApplyCashPayment(prop, billPaid);
+                    float billCash = TakeCash(drop.Storage, outstanding);
+                    if (billCash > 0f)
+                    {
+                        ModElectricBill.CashPaymentResult r = electric.ApplyCashPayment(prop, billCash, announce: false);
+                        electricPaid = r.Paid;
+                        electricOwedAfter = r.Remaining;
+                        electricCleared = r.Cleared;
+                        powerRestored = r.PowerRestored;
+                    }
                 }
             }
+
+            if (rentPaid > 0f || electricPaid > 0f)
+                RentMessenger.Send(loc, ComposeDropMessage(
+                    prop, loc, rentPaid, rentOwedAfter, rentCleared, accessRestored,
+                    electricPaid, electricOwedAfter, electricCleared, powerRestored));
+        }
+
+        // Builds the single landlord message confirming a dead-drop payment, covering rent and (when the
+        // ElectricBill module settled one here) electricity together.
+        private static string ComposeDropMessage(
+            Property prop, RentLocationConfiguration loc,
+            float rentPaid, float rentOwed, bool rentCleared, bool accessRestored,
+            float electricPaid, float electricOwed, bool electricCleared, bool powerRestored)
+        {
+            StringBuilder sb = new();
+            sb.Append($"Received ${rentPaid + electricPaid:N0} for {prop.PropertyName}");
+
+            List<string> parts = new();
+            if (rentPaid > 0f)
+                parts.Add(rentCleared
+                    ? $"${rentPaid:N0} rent (paid up)"
+                    : $"${rentPaid:N0} rent (${rentOwed:N0} still owed)");
+            if (electricPaid > 0f)
+                parts.Add(electricCleared
+                    ? $"${electricPaid:N0} electricity (paid up)"
+                    : $"${electricPaid:N0} electricity (${electricOwed:N0} still owed)");
+            if (parts.Count > 0)
+                sb.Append(": ").Append(string.Join(", ", parts));
+            sb.Append('.');
+
+            if (accessRestored)
+                sb.Append(" Your access is restored.");
+            if (powerRestored)
+                sb.Append(" Power is back on.");
+
+            if ((rentPaid > 0f && !rentCleared) || (electricPaid > 0f && !electricCleared))
+                sb.Append($" Drop the rest at {loc.DeadDropName}.");
+
+            return sb.ToString();
         }
 
         private static float TakeCash(StorageEntity storage, float max)
@@ -732,9 +906,17 @@ namespace Lithium.Modules.Rent
                 };
 
                 // First week of ownership: no rent has been charged yet (no state, or the cadence is
-                // anchored at/after today by the fresh-purchase grace). Treated as paid.
-                v.FirstWeek = !hasState || state.LastChargedDay < 0 || (today >= 0 && state.LastChargedDay >= today);
-                v.Paid = v.Owed <= 0f || v.FirstWeek;
+                // anchored at/after today by the fresh-purchase grace). The Owed == 0 guard is essential:
+                // ApplyDueCharges advances the anchor with `LastChargedDay += RentIntervalDays`, which lands
+                // exactly ON today the day a charge fires (and the locked-out branch sets LastChargedDay =
+                // today too) — so `LastChargedDay >= today` is ALSO true on a freshly-charged, genuinely-owed
+                // day. Without the guard the app mislabels that day as first-week/paid (hiding the new charge),
+                // then abruptly reads overdue the next day — i.e. "I paid recently, app said paid, slept once,
+                // suddenly overdue".
+                v.FirstWeek = !hasState || state.LastChargedDay < 0
+                              || (today >= 0 && state.LastChargedDay >= today && v.Owed <= 0f);
+                // Paid strictly means nothing is owed — never let the grace label paper over a real debt.
+                v.Paid = v.Owed <= 0f;
 
                 // Upcoming charge date (while paid).
                 if (hasState && state.LastChargedDay >= 0 && today >= 0)

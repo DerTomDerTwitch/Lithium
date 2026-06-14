@@ -278,6 +278,18 @@ namespace Lithium.Modules.Customers
     public class ModCustomersConfiguration : ModuleConfiguration
     {
         public override string Name => "Customers";
+
+        /// <summary>
+        /// Number of product slots on the customer handover screen (Complete Deal / Give Free Sample /
+        /// Offer Deal). Vanilla is 4. Raising it lets a single handover carry more product — useful for
+        /// large bulk orders whose required quantity exceeds 4 stacks. This lever is independent of
+        /// <see cref="ModuleConfiguration.Enabled"/>: it takes effect purely from its value (4 = vanilla,
+        /// no-op), so more slots can be enabled without turning on the rest of the customer rework.
+        /// Applied by <c>HandoverSlotCountPatch</c>; clamped to 4–12 (very high values overflow the
+        /// panel visually).
+        /// </summary>
+        public int HandoverSlotCount { get; set; } = 4;
+
         public SampleOffering SampleOffering { get; set; } = new SampleOffering();
         public DirectSales DirectSales { get; set; } = new DirectSales();
         public Contracts Contracts { get; set; } = new Contracts();
@@ -287,6 +299,9 @@ namespace Lithium.Modules.Customers
 
         public override void Validate()
         {
+            HandoverSlotCount = ConfigValidator.InRange(
+                Name, "HandoverSlotCount", HandoverSlotCount, 4, 12);
+
             SampleOffering.MinRankTier = ConfigValidator.InRange(
                 Name, "SampleOffering.MinRankTier", SampleOffering.MinRankTier, 1, 5);
 

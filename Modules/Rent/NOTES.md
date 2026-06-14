@@ -86,10 +86,30 @@ dropped (the contact NPC won't resolve).
 
 Called every in-game minute by `RentDailyTickPatch` (postfix on `TimeManager.PassMinute`). Does real
 work only when the day rolls over (compares `ElapsedDays`). On the first tick after a load it runs
-discovery, captures established locations, rebuilds the locked set, and records the current day — but
-does not process a day (properties/save may have only just become available). Multi-day jumps from
-sleeping are handled because the loop in `ApplyDueCharges` advances by `RentIntervalDays` increments
-until caught up.
+discovery, captures established locations, rebuilds the locked set, **reconciles lockouts against the
+current overdue count** (`ReconcileLockoutsOnLoad`, see below), and records the current day — but does
+not process a day (properties/save may have only just become available). Multi-day jumps from sleeping
+are handled because the loop in `ApplyDueCharges` advances by `RentIntervalDays` increments until caught
+up.
+
+### Lockout evaluation runs on every overdue path, not just `ProcessDay` (`ReconcileOverdue`)
+
+The warning/lockout transition is `ReconcileOverdue(prop, loc, code, state, today)` — a pure function of
+`(today, state)` that sets `WarningSent` / `LockedOut` (+ `LockedCodes`) and returns the transition
+message, or null. It is called from **three** paths: `ProcessDay` (live day rollover), the `Tick` init
+block via `ReconcileLockoutsOnLoad` (on load), and `SendLoadReminders` (so its message matches the
+freshly-applied lockout).
+
+**Why this matters — the bug it fixes.** `ApplyDueCharges` (which advances charges and sets `DueSinceDay`)
+runs in three places, but the lockout/warning evaluation used to run in **only** `ProcessDay`, which fires
+only on a *live in-game day rollover*. The `Tick` init block resets `_lastElapsedDay = today` on every
+load, so when the threshold day was crossed across a load boundary — or charges were caught up at load by
+`SendLoadReminders` (which never locked) — `ProcessDay` never "saw" the threshold day and the property
+accrued overdue days while staying unlocked and access-open. Symptom seen in the wild: a Motel reading
+"8 days overdue" with `LockedOut: false` **and** `WarningSent: false` (impossible if `ProcessDay` had run
+on any overdue day) — the door stayed unlocked. This is the same path-coverage trap noted in the root
+`CLAUDE.md`: the mutation (charging) ran on more code paths than the enforcement (locking).
+`ReconcileLockoutsOnLoad` closes the gap; an existing already-overdue save self-heals on the next load.
 
 ### ProcessDay logic
 
@@ -98,12 +118,12 @@ For each enabled, owned location:
    send a "still locked" daily message, persist, and continue.
 2. Otherwise: call `ApplyDueCharges` to advance the cadence and accumulate `Owed`.
 3. If newly charged: send a due-notice message.
-4. If `Owed > 0` and `DueSinceDay >= 0`:
-   - If `DaysUntilLockout >= 1` and `overdue == DaysUntilLockout - 1`: send the final warning (once per
-     overdue spell, tracked by `WarningSent`).
+4. Call `ReconcileOverdue` (shared warning/lockout evaluation):
    - If `overdue >= DaysUntilLockout`: lock out, add to `LockedCodes`, send lockout message.
-   - Otherwise (owed, no other notice today): send a daily reminder nudge.
-5. Persist the state.
+   - Else if `DaysUntilLockout >= 1` and `overdue == DaysUntilLockout - 1`: send the final warning (once
+     per overdue spell, tracked by `WarningSent`).
+5. If still owed and **not** locked and nothing else was sent today: send a daily reminder nudge.
+6. Persist the state.
 
 ### Payment processing (`ProcessPayment`)
 
@@ -115,11 +135,15 @@ never throws into the game's close path.
 
 After rent, `CreditFromDrop` also settles the **same property's outstanding power bill** from any cash
 left in the drop: it reads `ModElectricBill.GetOutstandingBill(code)` and, if positive, takes that much
-cash and calls `ModElectricBill.ApplyCashPayment(prop, amount)` (which reduces the bill and restores
-power if it clears). The phone Property tab shows rent and electricity together, so the rent dead drop
-covers both — without this, cash meant for the power bill would sit in the drop, ignored. No-op when the
-ElectricBill module is off or nothing is outstanding (the power bill normally auto-deducts from the bank;
-an outstanding amount only exists when the bank was short and power was cut).
+cash and calls `ModElectricBill.ApplyCashPayment(prop, cash, announce:false)`, capturing the returned
+`CashPaymentResult`. The phone Property tab shows rent and electricity together, and electricity is paid
+**only in cash here** (no bank auto-deduct), so the rent dead drop is the settlement point for both.
+
+**One combined message.** Rather than texting separately for rent and electricity, `CreditFromDrop`
+accumulates the outcome of both (amount paid, cleared/partial, access/power restored) and sends a single
+landlord message built by `ComposeDropMessage` — e.g. *"Received $1,200 for Motel Room: $1,000 rent (paid
+up), $200 electricity (paid up). Your access is restored. Power is back on."* This is why
+`ApplyCashPayment` is called with `announce:false` (it would otherwise send its own power-bill text).
 
 ### Auto-discovery (`DiscoverLocations`)
 
@@ -138,9 +162,10 @@ yielded only once.
 ### SendLoadReminders
 
 Once the world is ready, brings every enabled, owned location's rent up to date for the current day
-(first-sight billing charges the current week) and texts the player the status of any location with
-outstanding rent. Persists the freshly billed state so it survives the next save/load. Everything owned
-at this point is treated as established (not fresh-buy grace).
+(first-sight billing charges the current week), **reconciles the lockout/warning state against the
+current overdue count** (`ReconcileOverdue`, so the status message below is accurate), and texts the
+player the status of any location with outstanding rent. Persists the freshly billed state so it survives
+the next save/load. Everything owned at this point is treated as established (not fresh-buy grace).
 
 ### Default location table
 
